@@ -41,6 +41,8 @@ constexpr uint32_t QR_SCAN_TIMEOUT_MS = 30000;        // 30 seconds for QR code 
 constexpr uint32_t ERROR_RECOVERY_TIMEOUT_MS = 60000; // 60 seconds before auto-recovery
 constexpr uint32_t LED_BLINK_SLOW_MS = 500;           // 1Hz blink (500ms on, 500ms off)
 constexpr uint32_t LED_BLINK_FAST_MS = 100;           // 5Hz blink (100ms on, 100ms off)
+constexpr uint32_t HEARTBEAT_INTERVAL_MS = 5000;      // 5 seconds
+constexpr uint32_t SETUP_LED_BLINK_MS = 200;          // Boot LED blink duration
 
 // State timing tracking
 uint32_t stateEntryTime = 0;      // Timestamp when current state was entered
@@ -362,9 +364,9 @@ void setup() {
     // Blink LED to indicate successful initialization
     for (int i = 0; i < 3; i++) {
         digitalWrite(LED_STATUS, HIGH);
-        delay(200);
+        delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
         digitalWrite(LED_STATUS, LOW);
-        delay(200);
+        delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
     }
 }
 
@@ -395,7 +397,7 @@ void loop() {
     static unsigned long lastHeartbeat = 0;
     unsigned long now = millis();
 
-    if (now - lastHeartbeat >= 5000) {
+    if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         lastHeartbeat = now;
 
         Serial.print("♥ Heartbeat: ");
