@@ -337,3 +337,123 @@ State machine approach is most appropriate for this application:
 2. Makes LED state indication straightforward
 3. Enables clean timeout handling for QR scanning
 4. Facilitates future feature additions (MQTT, config modes)
+
+### 2025-11-12: State Machine Architecture PRD (M3L-57)
+**Agent**: product-manager
+
+**Business Objective**:
+Implement foundation state management system to enable coordinated recording workflows across hardware components (button, QR scanner, IMU, SD card). This is the critical path feature - all user-facing functionality depends on reliable state transitions.
+
+**User Segments**:
+- Data collection researchers operating physical device in field
+- Jobs-to-be-done: Start recording with QR metadata, handle timeouts gracefully, stop recording cleanly, troubleshoot device state
+
+**Success Metrics**:
+- Leading indicators: State transition <100ms, zero stuck states in 100-cycle stress test, stable heap across 1000 transitions
+- Lagging indicators: Downstream sensor integration (M3L-58, 60, 61) requires no state machine changes, 100% manual test pass rate
+
+**Key Design Decisions**:
+1. ISR-safe architecture: Interrupts set flags only, main loop handles state transitions
+2. Non-blocking timeout: AWAITING_QR uses millis() for 30s QR scan window
+3. Error recovery: ERROR state with 60s auto-recovery + manual serial reset
+4. Memory safety: No dynamic allocation, continuous heap monitoring
+5. Observability: All transitions logged with timestamps and heap usage
+
+**PRD Location**: `plans/prd-m3l-57-state-machine.md` (Linear: M3L-57)
+
+### 2025-11-12: State Machine UX Design (M3L-57)
+**Agent**: ux-designer
+
+**Design Pattern**: Hardware interaction state machine with LED-based user feedback
+
+**User Problem**:
+Users need unambiguous feedback about device state when operating a single-button IoT device. Without visual differentiation, users cannot tell if the device is idle, waiting for input, recording, or has encountered an error.
+
+**Design Approach**:
+Each state has a unique LED pattern that is instantly recognizable and cannot be confused with other states. Patterns are designed for peripheral vision recognition and follow embedded systems best practices (non-blocking timing, ISR safety).
+
+**LED Pattern Vocabulary**:
+- **IDLE**: OFF - device ready
+- **AWAITING_QR**: SLOW BLINK (1Hz) - waiting for QR scan
+- **RECORDING**: SOLID ON - actively recording
+- **SESSION_ENDING**: DOUBLE BLINK → OFF - saving data
+- **TIMEOUT_ERROR**: TRIPLE BLINK → OFF - QR scan timeout
+- **QR_PARSE_FAIL**: TRIPLE BLINK → SLOW BLINK - invalid QR, retry
+- **SD_CARD_FULL**: RAPID BLINK (5Hz, 3s) → OFF - fatal error
+- **SENSOR_INIT_FAIL**: CONTINUOUS RAPID BLINK - fatal hardware error
+
+**Edge Cases Handled**:
+- Button press during AWAITING_QR: Cancel and return to IDLE
+- Multiple rapid presses: Debounced (50ms ISR + 100ms software lockout)
+- QR scan after timeout: Ignored (reader deactivated on timeout entry)
+- SD card removed during recording: Graceful failure with periodic buffer flush
+- Power loss during recording: Minimize data loss via 2-second flush interval
+
+**Accessibility Considerations**:
+- Serial output provides structured debug logging: `[MMM:SS.mmm] LEVEL: Context - Message`
+- All state transitions logged with timestamps
+- LED patterns distinguishable even with peripheral vision
+- Non-blocking timing prevents race conditions
+- ISR-safe design (flags only, no I2C in interrupts)
+
+**Component Reuse**: Qwiic Button LED (existing hardware)
+
+**Design Brief Location**: `plans/design-m3l-57-state-machine.md` (Linear: M3L-57)
+
+### 2025-11-12: State Machine Implementation (M3L-57)
+**Agent**: senior-software-engineer
+
+**What was built**:
+Implemented core state machine architecture in `src/main.cpp` with four system states (IDLE, AWAITING_QR, RECORDING, ERROR), state transition management, non-blocking LED patterns, and timeout handling. This establishes the foundation for all sensor integration work.
+
+**Key Decisions**:
+1. **Non-blocking LED patterns**: Used `millis()` and `lastLEDToggle` for blink timing to avoid blocking main loop
+2. **State entry/exit actions**: Centralized in `transitionState()` for consistency and debugging
+3. **Timeout implementation**: `stateEntryTime` tracked per-state, checked in state handlers
+4. **Memory efficiency**: No dynamic allocation, all timing variables are uint32_t
+5. **Observability**: Serial logging format `[uptime_ms] STATE_CHANGE: OLD → NEW (reason) | Free Heap: X bytes`
+6. **ISR preparation**: Added TODOs for future button ISR integration (M3L-58)
+
+**Implementation Patterns**:
+```cpp
+// State transition with logging and actions
+void transitionState(SystemState newState, const char* reason);
+
+// Non-blocking LED pattern update (called every loop iteration)
+void updateLEDPattern();
+
+// State handlers (called every loop iteration)
+void handleIdleState();
+void handleAwaitingQRState();  // Checks 30s timeout
+void handleRecordingState();
+void handleErrorState();        // Checks 60s auto-recovery
+```
+
+**LED Pattern Timing**:
+- IDLE: OFF (no timing needed)
+- AWAITING_QR: Slow blink at 1Hz (500ms on, 500ms off)
+- RECORDING: Solid ON (no timing needed)
+- ERROR: Fast blink at 5Hz (100ms on, 100ms off)
+
+**Gotchas**:
+1. **LED state initialization**: Must set `lastLEDToggle = millis()` and `ledState = false` when entering new state to prevent initial flicker
+2. **Timeout arithmetic**: Use `uint32_t timeInState = millis() - stateEntryTime` to handle millis() rollover correctly
+3. **State transition idempotency**: Always check `if (oldState == newState) return;` to prevent redundant transitions
+4. **Heartbeat integration**: Enhanced heartbeat now shows state name and time-in-state for debugging
+
+**Testing Challenges**:
+- Serial upload to device failed with "Invalid head of packet" error (hardware timing issue, not code)
+- Code compiles cleanly: RAM 7.0% (22780 bytes), Flash 29.5% (386685 bytes)
+- Manual testing requires: Hold boot button, reset device, or adjust upload_speed in platformio.ini
+
+**Code Locations**:
+- Main implementation: `src/main.cpp:48-299` (state machine functions)
+- State enum: `src/main.cpp:30-35`
+- Timing constants: `src/main.cpp:38-48`
+- Loop integration: `src/main.cpp:301-344`
+
+**Next Steps** (Integration Points):
+- M3L-58: Button interrupt handler will call `transitionState(AWAITING_QR, "button pressed")`
+- M3L-60: QR scanner will call `transitionState(RECORDING, "QR code scanned")` on success
+- M3L-61: IMU sampling will start/stop based on RECORDING state entry/exit actions
+- M3L-62: SD card file operations will occur in RECORDING state entry/exit actions
