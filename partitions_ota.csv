@@ -1,0 +1,21 @@
+# ESP32 Partition Table - OTA Support (LATER Phase)
+#
+# WARNING: Do NOT enable this partition table until OTA firmware update
+# feature is ready for implementation. Use default partitions for NOW phase.
+#
+# To enable: Uncomment board_build.partitions in platformio.ini
+#
+# This partition scheme supports Over-The-Air (OTA) firmware updates:
+# - Two app partitions (ota_0 and ota_1) for A/B firmware updates
+# - otadata partition to track which app is active
+# - SPIFFS partition for configuration storage
+#
+# Total Size: 4MB (0x400000)
+# App Partitions: ~1.9MB each (sufficient for M3 Data Logger firmware)
+#
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x1E0000,
+app1,     app,  ota_1,    0x1F0000, 0x1E0000,
+spiffs,   data, spiffs,   0x3D0000, 0x30000,

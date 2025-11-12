@@ -43,3 +43,9 @@ data/*.json
 # OS
 .DS_Store
 Thumbs.db
+
+.serena/
+.claude/
+plans/
+reviews/
+tests/reports/
