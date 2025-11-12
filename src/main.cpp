@@ -130,9 +130,37 @@ void transitionState(SystemState newState, const char* reason) {
         return;
     }
 
-    // Validate state transitions (basic validation)
-    // More complex validation can be added as needed
-    bool validTransition = true;
+    // Validate state transitions
+    bool validTransition = false;
+
+    // Define valid state transitions
+    switch (oldState) {
+        case SystemState::IDLE:
+            validTransition = (newState == SystemState::AWAITING_QR || 
+                              newState == SystemState::ERROR);
+            break;
+        case SystemState::AWAITING_QR:
+            validTransition = (newState == SystemState::RECORDING || 
+                              newState == SystemState::IDLE ||
+                              newState == SystemState::ERROR);
+            break;
+        case SystemState::RECORDING:
+            validTransition = (newState == SystemState::IDLE || 
+                              newState == SystemState::ERROR);
+            break;
+        case SystemState::ERROR:
+            validTransition = (newState == SystemState::IDLE);
+            break;
+    }
+
+    if (!validTransition) {
+        Serial.print("[ERROR] Invalid state transition: ");
+        Serial.print(stateToString(oldState));
+        Serial.print(" → ");
+        Serial.print(stateToString(newState));
+        Serial.println();
+        return;  // Reject invalid transition
+    }
 
     // Log state transition
     uint32_t uptime = millis();
@@ -199,8 +227,8 @@ void transitionState(SystemState newState, const char* reason) {
     }
 
     // Immediately update LED for new state
+    // Reset LED timing (don't force LED state - let updateLEDPattern() handle it)
     lastLEDToggle = millis();
-    ledState = false;
     updateLEDPattern();
 }
 
