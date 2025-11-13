@@ -22,6 +22,8 @@
 #include <Arduino.h>
 #include "hardware_init.h"
 #include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
+#include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
+#include <tiny_code_reader.h>       // For QR scanner (M3L-60)
 
 // Firmware version
 #define FW_VERSION "0.2.0-dev"
@@ -54,6 +56,12 @@ bool ledState = false;             // Current LED state for blinking
 volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
 uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
+
+// QR Code Metadata Storage (M3L-60)
+char currentTestName[65] = "";        // Test name from QR code (max 64 chars + null terminator)
+String currentLabels[10];             // Label array from QR code (max 10 labels)
+uint8_t labelCount = 0;               // Number of valid labels extracted
+bool metadataValid = false;           // Set to true after successful QR scan and parse
 
 // ===== Interrupt Service Routines =====
 
