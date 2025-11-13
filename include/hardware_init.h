@@ -59,6 +59,12 @@
 // I2C Device Addresses (Built-in)
 #define ADDR_FUEL_GAUGE      0x36 // MAX17048 battery fuel gauge
 
+// I2C Device Addresses (Qwiic peripherals)
+#define ADDR_QWIIC_BUTTON    0x6F // SparkFun Qwiic Button - Red LED
+
+// Button Interrupt Pin
+#define BUTTON_INT_PIN       33   // Interrupt-capable GPIO for button press detection
+
 // ===== Function Declarations =====
 
 /**
@@ -117,5 +123,28 @@ float getBatteryPercent();
  * Displays ESP32 info, memory, flash size, etc.
  */
 void printHardwareInfo();
+
+/**
+ * @brief Initialize Qwiic Button with interrupt-driven press detection
+ *
+ * Configures the Qwiic Button at I2C address 0x6F with:
+ * - 50ms debounce time (prevents false triggers)
+ * - Pressed interrupt enabled
+ * - Hardware interrupt on GPIO33 (falling edge)
+ *
+ * This function MUST be called after initializeI2C().
+ *
+ * @return true if button initialized successfully, false otherwise
+ */
+bool initializeQwiicButton();
+
+// ===== External Object Declarations =====
+
+// Forward declare QwiicButton class to avoid including full header
+class QwiicButton;
+
+// Global button object (defined in hardware_init.cpp)
+// Accessible from main.cpp for interrupt handling
+extern QwiicButton button;
 
 #endif // HARDWARE_INIT_H
