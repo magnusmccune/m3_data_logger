@@ -628,8 +628,13 @@ void setup() {
         Serial.println("   Button press functionality disabled");
     }
 
+    // Initialize Tiny Code Reader for QR scanning (M3L-60)
+    if (!initializeQRReader()) {
+        Serial.println("⚠ WARNING: QR Reader initialization failed");
+        Serial.println("   QR code scanning functionality disabled");
+    }
+
     // TODO (M3L-59): Initialize I2C sensors
-    // TODO (M3L-60): Initialize Tiny Code Reader (QR scanner)
     // TODO (M3L-61): Initialize ISM330DHCX IMU
 
     Serial.println("╔════════════════════════════════════════╗");
@@ -637,7 +642,7 @@ void setup() {
     Serial.println("╚════════════════════════════════════════╝");
     Serial.println();
     Serial.println("Current State: IDLE");
-    Serial.println("Waiting for sensor integration (M3L-57)...");
+    Serial.println("Waiting for button press to start QR scan...");
     Serial.println();
 
     // Blink button LED to indicate successful initialization
