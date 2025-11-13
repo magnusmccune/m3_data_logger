@@ -16,6 +16,7 @@
 #include <SD_MMC.h>
 #include <Wire.h>
 #include <SparkFun_Qwiic_Button.h>
+#include <tiny_code_reader.h>
 
 // ===== Global Objects =====
 QwiicButton button;  // Global button object accessible from main.cpp
@@ -282,5 +283,23 @@ bool initializeQwiicButton() {
     Serial.println("✓ Event bits cleared");
 
     Serial.println("==== Button Initialization Complete ====\n");
+    return true;
+}
+
+// ===== QR Code Reader Initialization (M3L-60) =====
+
+bool initializeQRReader() {
+    Serial.println("\n==== QR Reader Initialization ====");
+
+    // Initialize QR reader on I2C at address 0x0C
+    if (!tiny_code_reader_init()) {
+        Serial.println("✗ ERROR: QR Reader not detected at 0x0C");
+        Serial.println("  Check Qwiic cable connection");
+        return false;
+    }
+    Serial.println("✓ QR Reader detected at 0x0C");
+    
+    Serial.println("✓ QR Reader ready for scanning");
+    Serial.println("==== QR Reader Initialization Complete ====\n");
     return true;
 }
