@@ -49,6 +49,27 @@ uint32_t stateEntryTime = 0;      // Timestamp when current state was entered
 uint32_t lastLEDToggle = 0;       // Last LED toggle for blink patterns
 bool ledState = false;             // Current LED state for blinking
 
+// Button interrupt handling
+volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
+
+// ===== Interrupt Service Routines =====
+
+/**
+ * @brief Button interrupt service routine
+ *
+ * CRITICAL CONSTRAINTS:
+ * - Must use IRAM_ATTR for ESP32 (places function in IRAM for fast access)
+ * - NO I2C operations (will crash)
+ * - NO Serial.print (unreliable)
+ * - Keep execution time under 10μs
+ * - Only set flags, do NOT process logic here
+ *
+ * This ISR is triggered by GPIO33 FALLING edge when button pressed.
+ * The main loop checks the buttonPressed flag and handles state transitions.
+ */
+void IRAM_ATTR buttonISR() {
+    buttonPressed = true;  // Set flag for main loop to process
+}
 
 // ===== Helper Functions =====
 
@@ -245,8 +266,24 @@ void transitionState(SystemState newState, const char* reason) {
  * - No active sensors
  */
 void handleIdleState() {
-    // Nothing to do in IDLE - waiting for button interrupt
-    // TODO (M3L-58): Button ISR will call transitionState(AWAITING_QR, "button pressed")
+    // Check for button press (flag set by ISR)
+    if (buttonPressed) {
+        buttonPressed = false;  // Clear flag immediately
+
+        // Verify button press via I2C (NOT in ISR - safe here)
+        if (button.hasBeenClicked()) {
+            // Visual confirmation: blink LED briefly
+            button.LEDon(255);  // Full brightness
+            delay(100);  // Blocking OK for user feedback (100ms is acceptable)
+            button.LEDoff();
+
+            // Clear interrupt flags to prevent repeat triggers
+            button.clearEventBits();
+
+            // Transition to AWAITING_QR state
+            transitionState(SystemState::AWAITING_QR, "button pressed");
+        }
+    }
 }
 
 /**
@@ -285,9 +322,27 @@ void handleAwaitingQRState() {
  * - System waits for button press to stop recording
  */
 void handleRecordingState() {
+    // Check for button press to stop recording
+    if (buttonPressed) {
+        buttonPressed = false;  // Clear flag immediately
+
+        // Verify button press via I2C
+        if (button.hasBeenClicked()) {
+            // Visual confirmation: blink LED briefly
+            button.LEDon(255);  // Full brightness
+            delay(100);  // Blocking OK for user feedback
+            button.LEDoff();
+
+            // Clear interrupt flags
+            button.clearEventBits();
+
+            // Stop recording and return to IDLE
+            transitionState(SystemState::IDLE, "recording stopped via button");
+        }
+    }
+
     // TODO (M3L-61): Sample IMU data at 100Hz
     // TODO (M3L-62): Write buffered data to SD card periodically
-    // TODO (M3L-58): Button ISR will call transitionState(IDLE, "recording stopped")
 }
 
 /**
@@ -301,14 +356,31 @@ void handleRecordingState() {
 void handleErrorState() {
     uint32_t timeInState = millis() - stateEntryTime;
 
+    // Check for manual recovery via button press
+    if (buttonPressed) {
+        buttonPressed = false;  // Clear flag immediately
+
+        // Verify button press via I2C
+        if (button.hasBeenClicked()) {
+            // Visual confirmation: blink LED briefly
+            button.LEDon(255);  // Full brightness
+            delay(100);  // Blocking OK for user feedback
+            button.LEDoff();
+
+            // Clear interrupt flags
+            button.clearEventBits();
+
+            // Manual recovery - return to IDLE
+            transitionState(SystemState::IDLE, "manual recovery via button");
+            return;
+        }
+    }
+
     // Auto-recovery after 60 seconds
     if (timeInState >= ERROR_RECOVERY_TIMEOUT_MS) {
         transitionState(SystemState::IDLE, "auto-recovery timeout (60s)");
         return;
     }
-
-    // TODO (M3L-58): Button ISR could also trigger manual recovery
-    //                 transitionState(IDLE, "manual recovery via button")
 }
 
 void setup() {
@@ -347,11 +419,15 @@ void setup() {
         Serial.println("⚠ WARNING: I2C initialization issues detected");
     }
 
+    // Initialize Qwiic Button with interrupt (M3L-58)
+    if (!initializeQwiicButton()) {
+        Serial.println("⚠ WARNING: Button initialization failed");
+        Serial.println("   Button press functionality disabled");
+    }
+
     // TODO (M3L-59): Initialize I2C sensors
-    // TODO (M3L-58): Initialize Qwiic Button with interrupt
     // TODO (M3L-60): Initialize Tiny Code Reader (QR scanner)
     // TODO (M3L-61): Initialize ISM330DHCX IMU
-    // TODO (M3L-57): Implement state machine transitions
 
     Serial.println("╔════════════════════════════════════════╗");
     Serial.println("║   Initialization Complete - Ready     ║");
