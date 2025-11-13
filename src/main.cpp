@@ -363,6 +363,23 @@ bool scanQRCode() {
     return false;
 }
 
+/**
+ * @brief Blocking LED blink pattern for QR feedback
+ * @param count Number of blinks (3=success, 5=failure)
+ * 
+ * NOTE: This is a blocking function (uses delay). Only call in state transitions,
+ *       not during active state handling. The blink is fast (100ms on/off) to minimize
+ *       blocking time.
+ */
+void blinkButtonLED(uint8_t count) {
+    for (uint8_t i = 0; i < count; i++) {
+        button.LEDon(255);  // Full brightness
+        delay(100);
+        button.LEDoff();
+        delay(100);
+    }
+}
+
 // ===== State Handler Functions =====
 
 /**
