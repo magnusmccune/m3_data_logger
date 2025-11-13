@@ -43,7 +43,7 @@
 #define I2C_SCL              22
 
 // LEDs
-#define LED_STATUS           25   // Status LED
+#define LED_STATUS           25   // Status LED (UNUSED - using Qwiic Button LED instead)
 #define LED_RGB              26   // RGB LED (NeoPixel)
 
 // Buttons

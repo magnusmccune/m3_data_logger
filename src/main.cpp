@@ -106,30 +106,38 @@ void updateLEDPattern() {
     switch (currentState) {
         case SystemState::IDLE:
             // LED OFF
-            digitalWrite(LED_STATUS, LOW);
+            button.LEDoff();
             ledState = false;
             break;
 
         case SystemState::AWAITING_QR:
-            // Slow blink (1Hz)
+            // Slow blink (1Hz) - 500ms on, 500ms off
             if (now - lastLEDToggle >= LED_BLINK_SLOW_MS) {
                 ledState = !ledState;
-                digitalWrite(LED_STATUS, ledState ? HIGH : LOW);
+                if (ledState) {
+                    button.LEDon(255);  // Full brightness when on
+                } else {
+                    button.LEDoff();
+                }
                 lastLEDToggle = now;
             }
             break;
 
         case SystemState::RECORDING:
-            // Solid ON
-            digitalWrite(LED_STATUS, HIGH);
+            // Solid ON - full brightness
+            button.LEDon(255);
             ledState = true;
             break;
 
         case SystemState::ERROR:
-            // Fast blink (5Hz)
+            // Fast blink (5Hz) - 100ms on, 100ms off
             if (now - lastLEDToggle >= LED_BLINK_FAST_MS) {
                 ledState = !ledState;
-                digitalWrite(LED_STATUS, ledState ? HIGH : LOW);
+                if (ledState) {
+                    button.LEDon(255);  // Full brightness when on
+                } else {
+                    button.LEDoff();
+                }
                 lastLEDToggle = now;
             }
             break;
@@ -467,8 +475,8 @@ void setup() {
     // Print hardware information
     printHardwareInfo();
 
-    // Initialize status LED
-    initializeStatusLED();
+    // NOTE: Status LED removed - using Qwiic Button LED for all status indication
+    Serial.println("✓ Status LED: Using Qwiic Button LED");
     Serial.println();
 
     // CRITICAL: Initialize SD card with level shifter activation (GPIO32)
@@ -501,11 +509,11 @@ void setup() {
     Serial.println("Waiting for sensor integration (M3L-57)...");
     Serial.println();
 
-    // Blink LED to indicate successful initialization
+    // Blink button LED to indicate successful initialization
     for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_STATUS, HIGH);
+        button.LEDon(255);  // Full brightness
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
-        digitalWrite(LED_STATUS, LOW);
+        button.LEDoff();
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
     }
 }
