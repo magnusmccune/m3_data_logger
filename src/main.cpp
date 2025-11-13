@@ -274,6 +274,95 @@ void transitionState(SystemState newState, const char* reason) {
     updateLEDPattern();
 }
 
+// ===== QR Code Scanning Functions (M3L-60) =====
+
+/**
+ * @brief Parse and validate QR code JSON metadata
+ * @param json JSON string from QR code
+ * @return true if valid metadata extracted, false otherwise
+ */
+bool parseQRMetadata(const char* json) {
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, json);
+    
+    if (error) {
+        Serial.print("✗ JSON parse failed: ");
+        Serial.println(error.c_str());
+        return false;
+    }
+    
+    // Extract test name (required field)
+    const char* test = doc["test"];
+    if (!test || strlen(test) == 0 || strlen(test) > 64) {
+        Serial.println("✗ Invalid test name (must be 1-64 chars)");
+        return false;
+    }
+    strncpy(currentTestName, test, 64);
+    currentTestName[64] = '\0';
+    
+    // Extract labels array (required field, min 1 label)
+    JsonArray labels = doc["labels"];
+    if (!labels || labels.size() == 0 || labels.size() > 10) {
+        Serial.println("✗ Invalid labels array (must have 1-10 labels)");
+        return false;
+    }
+    
+    // Parse individual labels
+    labelCount = 0;
+    for (JsonVariant label : labels) {
+        const char* labelStr = label.as<const char*>();
+        if (labelStr && strlen(labelStr) > 0 && strlen(labelStr) <= 32) {
+            currentLabels[labelCount++] = String(labelStr);
+        } else {
+            Serial.print("✗ Invalid label (must be 1-32 chars): ");
+            Serial.println(labelStr ? labelStr : "<null>");
+        }
+    }
+    
+    if (labelCount == 0) {
+        Serial.println("✗ No valid labels found in array");
+        return false;
+    }
+    
+    metadataValid = true;
+    
+    // Log extracted metadata
+    Serial.println("✓ QR metadata validated and extracted:");
+    Serial.print("  Test: ");
+    Serial.println(currentTestName);
+    Serial.print("  Labels (");
+    Serial.print(labelCount);
+    Serial.print("): ");
+    for (uint8_t i = 0; i < labelCount; i++) {
+        Serial.print(currentLabels[i]);
+        if (i < labelCount - 1) Serial.print(", ");
+    }
+    Serial.println();
+    
+    return true;
+}
+
+/**
+ * @brief Non-blocking QR code scan
+ * @return true if QR code detected and parsed successfully, false otherwise
+ */
+bool scanQRCode() {
+    tiny_code_reader_results_t results;
+    
+    // Attempt to read QR code (non-blocking)
+    if (tiny_code_reader_read(&results)) {
+        if (results.content_length > 0) {
+            Serial.println("✓ QR code detected, parsing metadata...");
+            
+            // QR code found, parse JSON metadata
+            return parseQRMetadata((const char*)results.content_bytes);
+        }
+    }
+    
+    // No QR code detected yet (not an error, just keep polling)
+    return false;
+}
+
 // ===== State Handler Functions =====
 
 /**
