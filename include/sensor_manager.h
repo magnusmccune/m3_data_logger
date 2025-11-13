@@ -82,6 +82,17 @@ bool isSampleReady();
  * @param actualRate Pointer to store actual sample rate (Hz)
  * @param lossRate Pointer to store sample loss percentage (0.0-100.0)
  */
+/**
+ * @brief Get next buffered sample from circular buffer
+ *
+ * Retrieves the next available sample from the internal circular buffer.
+ * Use this to drain buffered samples during recording.
+ *
+ * @param sample Pointer to IMUSample structure to fill
+ * @return true if sample retrieved, false if buffer empty
+ */
+bool getBufferedSample(IMUSample* sample);
+
 void getSamplingStats(float* actualRate, float* lossRate);
 
 #endif // SENSOR_MANAGER_H

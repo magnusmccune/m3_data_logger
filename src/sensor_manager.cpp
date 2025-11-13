@@ -36,9 +36,8 @@ static bool getNextSample(IMUSample* sample);
 bool initializeIMU() {
     Serial.println("[IMU] Initializing ISM330DHCX...");
 
-    // Initialize I2C communication
-    Wire.begin();
-    Wire.setClock(400000);  // 400kHz I2C for faster reads
+    // I2C already initialized in hardware_init.cpp
+    Wire.setClock(400000);  // Set clock speed only
 
     // Initialize IMU with I2C address 0x6B
     if (!imu.begin()) {
@@ -167,15 +166,14 @@ bool isSampleReady() {
         return false;
     }
 
-    // Check if enough time has elapsed for next sample
     uint32_t currentTime = millis();
-    uint32_t elapsed = currentTime - lastSampleTime;
-
-    if (elapsed >= SAMPLE_INTERVAL_MS) {
-        lastSampleTime = currentTime;
-        return true;
+    uint32_t elapsed = currentTime - sessionStartTime;
+    uint32_t expectedSamples = elapsed / SAMPLE_INTERVAL_MS;
+    
+    if (expectedSamples > samplesCollected) {
+        return true;  // We're behind schedule, need to catch up
     }
-
+    
     return false;
 }
 
@@ -203,6 +201,10 @@ void getSamplingStats(float* actualRate, float* lossRate) {
     } else {
         *lossRate = 0.0f;
     }
+}
+
+bool getBufferedSample(IMUSample* sample) {
+    return getNextSample(sample);
 }
 
 /**

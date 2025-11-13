@@ -61,7 +61,7 @@ constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
 
 // QR Code Metadata Storage (M3L-60)
 char currentTestName[65] = "";        // Test name from QR code (max 64 chars + null terminator)
-String currentLabels[10];             // Label array from QR code (max 10 labels)
+char currentLabels[10][33];           // Label array from QR code (max 10 labels, 32 chars + null)
 uint8_t labelCount = 0;               // Number of valid labels extracted
 bool metadataValid = false;           // Set to true after successful QR scan and parse
 
@@ -332,7 +332,9 @@ bool parseQRMetadata(const char* json) {
     for (JsonVariant label : labels) {
         const char* labelStr = label.as<const char*>();
         if (labelStr && strlen(labelStr) > 0 && strlen(labelStr) <= 32) {
-            currentLabels[labelCount++] = String(labelStr);
+            strncpy(currentLabels[labelCount], labelStr, 32);
+            currentLabels[labelCount][32] = '\0';
+            labelCount++;
         } else {
             Serial.print("✗ Invalid label (must be 1-32 chars): ");
             Serial.println(labelStr ? labelStr : "<null>");
@@ -503,10 +505,10 @@ void handleAwaitingQRState() {
             blinkButtonLED(3);
 
             // Start data logging session (M3L-64)
-            // Convert String array to const char* array for storage manager
+            // Convert char array to const char* array for storage manager
             const char* labelPtrs[10];
             for (uint8_t i = 0; i < labelCount; i++) {
-                labelPtrs[i] = currentLabels[i].c_str();
+                labelPtrs[i] = currentLabels[i];  // Safe - pointer to static array
             }
 
             if (startSession(currentTestName, labelPtrs, labelCount)) {
@@ -552,10 +554,9 @@ void handleRecordingState() {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
 
-            // Visual confirmation: blink LED briefly
-            button.LEDon(255);  // Full brightness
-            delay(100);  // Blocking OK for user feedback
-            button.LEDoff();
+            // Visual confirmation: quick non-blocking blink
+            button.LEDon(255);
+            // Don't delay - LED will turn off on next state's updateLEDPattern()
 
             // Clear interrupt flags
             button.clearEventBits();
@@ -576,14 +577,15 @@ void handleRecordingState() {
     // Sample IMU data at 100Hz (M3L-61)
     if (isSampleReady()) {
         IMUSample sample;
-        if (readIMUSample(&sample)) {
-            // Write sample to SD card (M3L-63)
-            if (!writeSample(sample)) {
-                Serial.println("[Recording] ERROR: Failed to write sample to SD");
-                // Continue recording despite error (graceful degradation)
-            }
-        } else {
-            Serial.println("[Recording] WARNING: Failed to read IMU sample");
+        readIMUSample(&sample);  // Adds to circular buffer
+    }
+
+    // Drain circular buffer to SD card
+    IMUSample sample;
+    while (getBufferedSample(&sample)) {
+        if (!writeSample(sample)) {
+            Serial.println("[Recording] ERROR: Failed to write sample to SD");
+            break;
         }
     }
 
