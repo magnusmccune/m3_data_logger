@@ -21,6 +21,7 @@
 
 #include <Arduino.h>
 #include "hardware_init.h"
+#include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
 
 // Firmware version
 #define FW_VERSION "0.2.0-dev"
