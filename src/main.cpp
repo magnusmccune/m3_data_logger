@@ -472,9 +472,26 @@ void handleAwaitingQRState() {
         return;
     }
 
-    // TODO (M3L-60): Check if QR code was scanned
-    // If QR code scanned and valid:
-    //   transitionState(SystemState::RECORDING, "QR code scanned");
+    // Poll QR reader (non-blocking, check every 100ms to reduce I2C traffic)
+    static uint32_t lastQRPoll = 0;
+    if (currentTime - lastQRPoll >= 100) {
+        lastQRPoll = currentTime;
+        
+        if (scanQRCode()) {
+            // SUCCESS: Valid QR code with metadata parsed
+            // Visual feedback: 3 fast blinks
+            blinkButtonLED(3);
+            
+            // Transition to RECORDING state
+            transitionState(SystemState::RECORDING, "QR code scanned successfully");
+            return;
+        }
+    }
+    
+    // If scanQRCode returns false, it means either:
+    // 1. No QR code detected yet (keep waiting)
+    // 2. QR code detected but invalid JSON (stay in AWAITING_QR for retry)
+    // The parseQRMetadata function already logs the error, so no action needed here
 }
 
 /**
