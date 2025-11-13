@@ -52,6 +52,8 @@ bool ledState = false;             // Current LED state for blinking
 
 // Button interrupt handling
 volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
+uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
+constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
 
 // ===== Interrupt Service Routines =====
 
@@ -269,10 +271,19 @@ void transitionState(SystemState newState, const char* reason) {
 void handleIdleState() {
     // Check for button press (flag set by ISR)
     if (buttonPressed) {
-        buttonPressed = false;  // Clear flag immediately
+        uint32_t currentTime = millis();
+        
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
 
         // Verify button press via I2C (NOT in ISR - safe here)
         if (button.hasBeenClicked()) {
+            buttonPressed = false;  // Clear flag AFTER successful I2C verification
+            lastButtonPressTime = currentTime;
+            
             // Visual confirmation: blink LED briefly
             button.LEDon(255);  // Full brightness
             delay(100);  // Blocking OK for user feedback (100ms is acceptable)
@@ -283,6 +294,8 @@ void handleIdleState() {
 
             // Transition to AWAITING_QR state
             transitionState(SystemState::AWAITING_QR, "button pressed");
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
         }
     }
 }
@@ -300,7 +313,36 @@ void handleIdleState() {
  * - Timeout (30s) → IDLE
  */
 void handleAwaitingQRState() {
-    uint32_t timeInState = millis() - stateEntryTime;
+    uint32_t currentTime = millis();
+    uint32_t timeInState = currentTime - stateEntryTime;
+    
+    // Check for button press to cancel QR scan
+    if (buttonPressed) {
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
+        
+        // Verify button press via I2C
+        if (button.hasBeenClicked()) {
+            buttonPressed = false;  // Clear flag AFTER successful I2C verification
+            lastButtonPressTime = currentTime;
+            
+            // Visual confirmation: blink LED
+            button.LEDon(255);
+            delay(100);
+            button.LEDoff();
+            
+            // Clear interrupt flags
+            button.clearEventBits();
+            
+            transitionState(SystemState::IDLE, "QR scan cancelled via button");
+            return;
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
+        }
+    }
 
     // Check for 30-second timeout
     if (timeInState >= QR_SCAN_TIMEOUT_MS) {
@@ -325,10 +367,19 @@ void handleAwaitingQRState() {
 void handleRecordingState() {
     // Check for button press to stop recording
     if (buttonPressed) {
-        buttonPressed = false;  // Clear flag immediately
+        uint32_t currentTime = millis();
+        
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
 
         // Verify button press via I2C
         if (button.hasBeenClicked()) {
+            buttonPressed = false;  // Clear flag AFTER successful I2C verification
+            lastButtonPressTime = currentTime;
+            
             // Visual confirmation: blink LED briefly
             button.LEDon(255);  // Full brightness
             delay(100);  // Blocking OK for user feedback
@@ -339,6 +390,8 @@ void handleRecordingState() {
 
             // Stop recording and return to IDLE
             transitionState(SystemState::IDLE, "recording stopped via button");
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
         }
     }
 
@@ -355,14 +408,22 @@ void handleRecordingState() {
  * - Can also be manually cleared by button press
  */
 void handleErrorState() {
-    uint32_t timeInState = millis() - stateEntryTime;
+    uint32_t currentTime = millis();
+    uint32_t timeInState = currentTime - stateEntryTime;
 
     // Check for manual recovery via button press
     if (buttonPressed) {
-        buttonPressed = false;  // Clear flag immediately
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
 
         // Verify button press via I2C
         if (button.hasBeenClicked()) {
+            buttonPressed = false;  // Clear flag AFTER successful I2C verification
+            lastButtonPressTime = currentTime;
+            
             // Visual confirmation: blink LED briefly
             button.LEDon(255);  // Full brightness
             delay(100);  // Blocking OK for user feedback
@@ -374,6 +435,8 @@ void handleErrorState() {
             // Manual recovery - return to IDLE
             transitionState(SystemState::IDLE, "manual recovery via button");
             return;
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
         }
     }
 
