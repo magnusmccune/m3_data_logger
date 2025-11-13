@@ -305,6 +305,11 @@ bool initializeQRReader() {
     Serial.println("  Expected I2C address: 0x0C");
     Serial.println("  NOTE: Continuously scans at ~5Hz, ~100mW power (no sleep mode available)");
 
+    // Turn off QR reader LED to save power (~5mW savings)
+    // Write 0x00 to register 0x01 (TINY_CODE_READER_REG_LED_STATE)
+    person_sensor_write_reg(TINY_CODE_READER_REG_LED_STATE, 0x00);
+    Serial.println("✓ QR Reader LED disabled (saves ~5mW)");
+
     Serial.println("✓ QR Reader ready for scanning");
     Serial.println("==== QR Reader Initialization Complete ====\n");
     return true;
