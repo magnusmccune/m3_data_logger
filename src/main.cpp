@@ -59,8 +59,9 @@ volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
 uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
 
-// QR Code Metadata Storage (M3L-60)
-char currentTestName[65] = "";        // Test name from QR code (max 64 chars + null terminator)
+// QR Code Metadata Storage (M3L-60, M3L-64)
+char currentTestID[9] = "";           // Test ID from QR code (8 chars + null, e.g., "A3F9K2M7")
+char currentDescription[65] = "";     // Test description from QR code (max 64 chars + null)
 char currentLabels[10][33];           // Label array from QR code (max 10 labels, 32 chars + null)
 uint8_t labelCount = 0;               // Number of valid labels extracted
 bool metadataValid = false;           // Set to true after successful QR scan and parse
@@ -295,22 +296,42 @@ bool parseQRMetadata(const char* json) {
         return false;
     }
 
-    // Extract test name (required field)
-    const char* test = doc["test"];
-    if (!test) {
-        Serial.println("✗ Error: Missing 'test' field");
+    // Extract test_id (required field, 8 alphanumeric chars)
+    const char* test_id = doc["test_id"];
+    if (!test_id) {
+        Serial.println("✗ Error: Missing 'test_id' field");
         return false;
     }
-    if (strlen(test) == 0) {
-        Serial.println("✗ Error: 'test' field cannot be empty");
+    if (strlen(test_id) != 8) {
+        Serial.println("✗ Error: 'test_id' must be exactly 8 characters");
         return false;
     }
-    if (strlen(test) > 64) {
-        Serial.println("✗ Error: 'test' field too long (max 64 chars)");
+    // Validate alphanumeric (no special chars)
+    for (size_t i = 0; i < 8; i++) {
+        if (!isalnum(test_id[i])) {
+            Serial.println("✗ Error: 'test_id' must be alphanumeric only");
+            return false;
+        }
+    }
+    strncpy(currentTestID, test_id, sizeof(currentTestID) - 1);
+    currentTestID[sizeof(currentTestID) - 1] = '\0';
+
+    // Extract description (required field)
+    const char* description = doc["description"];
+    if (!description) {
+        Serial.println("✗ Error: Missing 'description' field");
         return false;
     }
-    strncpy(currentTestName, test, sizeof(currentTestName) - 1);
-    currentTestName[sizeof(currentTestName) - 1] = '\0';
+    if (strlen(description) == 0) {
+        Serial.println("✗ Error: 'description' field cannot be empty");
+        return false;
+    }
+    if (strlen(description) > 64) {
+        Serial.println("✗ Error: 'description' field too long (max 64 chars)");
+        return false;
+    }
+    strncpy(currentDescription, description, sizeof(currentDescription) - 1);
+    currentDescription[sizeof(currentDescription) - 1] = '\0';
 
     // Extract labels array (required field, min 1 label)
     JsonArray labels = doc["labels"];
@@ -350,8 +371,10 @@ bool parseQRMetadata(const char* json) {
     
     // Log extracted metadata
     Serial.println("✓ QR metadata validated and extracted:");
-    Serial.print("  Test: ");
-    Serial.println(currentTestName);
+    Serial.print("  Test ID: ");
+    Serial.println(currentTestID);
+    Serial.print("  Description: ");
+    Serial.println(currentDescription);
     Serial.print("  Labels (");
     Serial.print(labelCount);
     Serial.print("): ");
@@ -511,7 +534,7 @@ void handleAwaitingQRState() {
                 labelPtrs[i] = currentLabels[i];  // Safe - pointer to static array
             }
 
-            if (startSession(currentTestName, labelPtrs, labelCount)) {
+            if (startSession(currentTestID, currentDescription, labelPtrs, labelCount)) {
                 Serial.println("[Session] Recording session started");
                 // Transition to RECORDING state
                 transitionState(SystemState::RECORDING, "QR code scanned successfully");

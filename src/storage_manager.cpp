@@ -9,12 +9,17 @@
 #include "storage_manager.h"
 #include <SD_MMC.h>
 #include <time.h>
+#include <ArduinoJson.h>
 
 // Session state
 static File sessionFile;
 static bool sessionActive = false;
 static char currentFilename[128];
 static char currentSessionID[32];
+static char currentTestID[9];         // 8 chars + null terminator
+static char currentDescription[65];   // 64 chars + null terminator
+static char currentLabels[MAX_LABELS][MAX_LABEL_LENGTH];
+static uint8_t currentLabelCount = 0;
 static uint32_t sessionStartTime = 0;
 static uint32_t sessionStartTimestamp = 0;
 static uint32_t lastFsyncTime = 0;
@@ -26,9 +31,10 @@ static uint8_t bufferCount = 0;
 
 // Forward declarations
 static bool flushBuffer();
-static bool createSessionFile(const char* testName);
-static bool writeCSVHeader(const char* testName, const char* labels[], uint8_t labelCount);
+static bool createSessionFile(const char* testID);
+static bool writeCSVHeader();
 static void generateSessionID(char* sessionID, size_t size);
+static bool writeMetadataEntry(uint32_t sessionDuration, float avgRate);
 
 /**
  * @brief Initialize storage manager
@@ -61,13 +67,13 @@ bool initializeStorage() {
 /**
  * @brief Start a new recording session
  */
-bool startSession(const char* testName, const char* labels[], uint8_t labelCount) {
+bool startSession(const char* testID, const char* description, const char* labels[], uint8_t labelCount) {
     if (sessionActive) {
         Serial.println("[Storage] ERROR: Session already active");
         return false;
     }
 
-    if (!testName || labelCount == 0 || labelCount > MAX_LABELS) {
+    if (!testID || !description || labelCount == 0 || labelCount > MAX_LABELS) {
         Serial.println("[Storage] ERROR: Invalid session parameters");
         return false;
     }
@@ -77,13 +83,27 @@ bool startSession(const char* testName, const char* labels[], uint8_t labelCount
     // Generate unique session ID
     generateSessionID(currentSessionID, sizeof(currentSessionID));
 
-    // Create CSV file
-    if (!createSessionFile(testName)) {
+    // Store test metadata globally for CSV rows and metadata.json
+    strncpy(currentTestID, testID, sizeof(currentTestID) - 1);
+    currentTestID[sizeof(currentTestID) - 1] = '\0';
+
+    strncpy(currentDescription, description, sizeof(currentDescription) - 1);
+    currentDescription[sizeof(currentDescription) - 1] = '\0';
+
+    // Copy labels
+    currentLabelCount = labelCount;
+    for (uint8_t i = 0; i < labelCount; i++) {
+        strncpy(currentLabels[i], labels[i], MAX_LABEL_LENGTH - 1);
+        currentLabels[i][MAX_LABEL_LENGTH - 1] = '\0';
+    }
+
+    // Create CSV file (now uses test_id instead of test name)
+    if (!createSessionFile(testID)) {
         return false;
     }
 
-    // Write CSV header with metadata
-    if (!writeCSVHeader(testName, labels, labelCount)) {
+    // Write CSV header (clean column headers only, no metadata)
+    if (!writeCSVHeader()) {
         sessionFile.close();
         return false;
     }
@@ -97,6 +117,7 @@ bool startSession(const char* testName, const char* labels[], uint8_t labelCount
     bufferCount = 0;
 
     Serial.printf("[Storage] Session started: %s\n", currentSessionID);
+    Serial.printf("[Storage] Test ID: %s\n", currentTestID);
     Serial.printf("[Storage] File: %s\n", currentFilename);
 
     return true;
@@ -162,18 +183,24 @@ bool endSession() {
         }
     }
 
-    // Final sync to disk
-    sessionFile.flush();
-    sessionFile.close();
-
     // Calculate session statistics
     uint32_t sessionDuration = millis() - sessionStartTime;
     float durationSeconds = sessionDuration / 1000.0f;
     float avgRate = (samplesWritten * 1000.0f) / sessionDuration;
 
+    // Final sync to disk
+    sessionFile.flush();
+    sessionFile.close();
+
+    // Write session metadata to metadata.json
+    if (!writeMetadataEntry(sessionDuration, avgRate)) {
+        Serial.println("[Storage] WARNING: Failed to write metadata, but CSV is saved");
+    }
+
     // Print session summary
     Serial.println("\n=== Session Complete ===");
     Serial.printf("Session ID: %s\n", currentSessionID);
+    Serial.printf("Test ID: %s\n", currentTestID);
     Serial.printf("Duration: %.1f seconds\n", durationSeconds);
     Serial.printf("Samples: %u (%.1f Hz avg)\n", samplesWritten, avgRate);
     Serial.printf("File: %s\n", currentFilename);
@@ -223,8 +250,9 @@ static bool flushBuffer() {
         // Calculate relative timestamp from session start
         uint32_t relativeTime = sample.timestamp_ms - sessionStartTimestamp;
 
-        // Write CSV row: timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
-        int written = sessionFile.printf("%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+        // Write CSV row: test_id,timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
+        int written = sessionFile.printf("%s,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+                                          currentTestID,
                                           relativeTime,
                                           sample.accel_x, sample.accel_y, sample.accel_z,
                                           sample.gyro_x, sample.gyro_y, sample.gyro_z);
@@ -244,25 +272,10 @@ static bool flushBuffer() {
 /**
  * @brief Create session CSV file (internal)
  */
-static bool createSessionFile(const char* testName) {
-    // Build filename: /data/YYYYMMDD_HHMMSS_<test_name>.csv
-    // For now, use session ID (timestamp-based) instead of full datetime
+static bool createSessionFile(const char* testID) {
+    // Build filename: /data/<session_id>_<test_id>.csv
     snprintf(currentFilename, sizeof(currentFilename),
-             "/data/%s_%s.csv", currentSessionID, testName);
-
-    // Sanitize ONLY the test name part (after "/data/<session_id>_")
-    // Find the start of the test name (after the last underscore before .csv)
-    size_t testNameStart = strlen("/data/") + strlen(currentSessionID) + 1; // +1 for underscore
-    for (size_t i = testNameStart; currentFilename[i] && currentFilename[i] != '.'; i++) {
-        if (currentFilename[i] == ' ' || currentFilename[i] == '/' ||
-            currentFilename[i] == '\\' || currentFilename[i] == ':' ||
-            currentFilename[i] == '*' || currentFilename[i] == '?' ||
-            currentFilename[i] == '"' || currentFilename[i] == '<' ||
-            currentFilename[i] == '>' || currentFilename[i] == '|' ||
-            currentFilename[i] < 32) {
-            currentFilename[i] = '_';
-        }
-    }
+             "/data/%s_%s.csv", currentSessionID, testID);
 
     // Open file for writing
     sessionFile = SD_MMC.open(currentFilename, FILE_WRITE);
@@ -275,28 +288,11 @@ static bool createSessionFile(const char* testName) {
 }
 
 /**
- * @brief Write CSV header with metadata (internal)
+ * @brief Write CSV header (internal)
  */
-static bool writeCSVHeader(const char* testName, const char* labels[], uint8_t labelCount) {
-    // Write metadata comments
-    sessionFile.printf("# Session ID: %s\n", currentSessionID);
-    sessionFile.printf("# Test: %s\n", testName);
-
-    // Write labels as comma-separated list
-    sessionFile.print("# Labels: ");
-    for (uint8_t i = 0; i < labelCount; i++) {
-        sessionFile.print(labels[i]);
-        if (i < labelCount - 1) {
-            sessionFile.print(",");
-        }
-    }
-    sessionFile.println();
-
-    // Write start time (Unix timestamp if RTC available, or millis())
-    sessionFile.printf("# Start Time: %lu\n", sessionStartTimestamp);
-
-    // Write column headers
-    sessionFile.println("timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z");
+static bool writeCSVHeader() {
+    // Write clean column headers only (no metadata comments)
+    sessionFile.println("test_id,timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z");
 
     return true;
 }
@@ -311,4 +307,68 @@ static void generateSessionID(char* sessionID, size_t size) {
 
     // Simple timestamp-based ID (in production, would use RTC)
     snprintf(sessionID, size, "%010lu", timestamp);
+}
+
+/**
+ * @brief Write session metadata to metadata.json (internal)
+ */
+static bool writeMetadataEntry(uint32_t sessionDuration, float avgRate) {
+    const char* metadataPath = "/data/metadata.json";
+    StaticJsonDocument<4096> doc;
+
+    // Try to load existing metadata.json
+    File metaFile = SD_MMC.open(metadataPath, FILE_READ);
+    if (metaFile) {
+        DeserializationError error = deserializeJson(doc, metaFile);
+        metaFile.close();
+        if (error) {
+            Serial.printf("[Storage] WARNING: Failed to parse existing metadata.json: %s\n", error.c_str());
+            // Continue with empty document
+        }
+    }
+
+    // Ensure "sessions" array exists
+    if (!doc.containsKey("sessions")) {
+        doc.createNestedArray("sessions");
+    }
+
+    JsonArray sessions = doc["sessions"];
+    JsonObject session = sessions.createNestedObject();
+
+    // Add session metadata
+    session["session_id"] = currentSessionID;
+    session["test_id"] = currentTestID;
+    session["description"] = currentDescription;
+
+    // Add labels array
+    JsonArray labels = session.createNestedArray("labels");
+    for (uint8_t i = 0; i < currentLabelCount; i++) {
+        labels.add(currentLabels[i]);
+    }
+
+    // TODO: Use ISO 8601 timestamp when NTP/RTC available
+    // For now, using millis() as placeholder
+    session["start_time"] = sessionStartTimestamp;
+    session["end_time"] = millis();
+    session["duration_ms"] = sessionDuration;
+    session["samples"] = samplesWritten;
+    session["actual_rate_hz"] = avgRate;
+    session["filename"] = currentFilename;
+
+    // Write updated metadata back to file
+    metaFile = SD_MMC.open(metadataPath, FILE_WRITE);
+    if (!metaFile) {
+        Serial.println("[Storage] ERROR: Failed to open metadata.json for writing");
+        return false;
+    }
+
+    if (serializeJson(doc, metaFile) == 0) {
+        Serial.println("[Storage] ERROR: Failed to write metadata.json");
+        metaFile.close();
+        return false;
+    }
+
+    metaFile.close();
+    Serial.println("[Storage] Metadata written to metadata.json");
+    return true;
 }

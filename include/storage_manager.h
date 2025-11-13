@@ -41,7 +41,7 @@ bool initializeStorage();
  * @param labelCount Number of labels (1-10)
  * @return true if session started successfully, false otherwise
  */
-bool startSession(const char* testName, const char* labels[], uint8_t labelCount);
+bool startSession(const char* testID, const char* description, const char* labels[], uint8_t labelCount);;
 
 /**
  * @brief Write a single IMU sample to the session file
