@@ -15,9 +15,14 @@
 #include "hardware_init.h"
 #include <SD_MMC.h>
 #include <Wire.h>
+#include <SparkFun_Qwiic_Button.h>
+
+// ===== Global Objects =====
+QwiicButton button;  // Global button object accessible from main.cpp
 
 // ===== Timing Constants =====
 constexpr uint32_t SD_STABILIZATION_DELAY_MS = 10;  // Level shifter stabilization time
+constexpr uint16_t BUTTON_DEBOUNCE_MS = 50;         // Button debounce time (prevents false triggers)
 
 // ===== SD Card Initialization =====
 
@@ -225,4 +230,51 @@ void printHardwareInfo() {
     }
 
     Serial.println();
+}
+
+// ===== Qwiic Button Initialization =====
+
+// Forward declaration of ISR (defined in main.cpp)
+// This allows hardware_init.cpp to attach the interrupt without circular dependency
+extern void buttonISR();
+
+bool initializeQwiicButton() {
+    Serial.println("\n==== Qwiic Button Initialization ====");
+
+    // Initialize button on I2C bus at address 0x6F
+    if (!button.begin(ADDR_QWIIC_BUTTON)) {
+        Serial.println("✗ ERROR: Qwiic Button not detected at 0x6F");
+        Serial.println("  Check Qwiic cable connection");
+        return false;
+    }
+    Serial.println("✓ Qwiic Button detected at 0x6F");
+
+    // Configure debounce time to prevent false triggers
+    // 50ms is recommended for mechanical button bounce suppression
+    button.setDebounceTime(BUTTON_DEBOUNCE_MS);
+    Serial.print("✓ Debounce time set to ");
+    Serial.print(BUTTON_DEBOUNCE_MS);
+    Serial.println(" ms");
+
+    // Enable pressed interrupt (triggers when button is pressed down)
+    // Note: Also available is clicked interrupt (triggers on press+release)
+    // We use pressed for immediate response
+    if (button.enablePressedInterrupt() != 0) {
+        Serial.println("✗ ERROR: Failed to enable button interrupt");
+        return false;
+    }
+    Serial.println("✓ Pressed interrupt enabled");
+
+    // Configure GPIO pin for hardware interrupt
+    pinMode(BUTTON_INT_PIN, INPUT);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_INT_PIN), buttonISR, FALLING);
+    Serial.print("✓ Hardware interrupt attached to GPIO");
+    Serial.println(BUTTON_INT_PIN);
+
+    // Clear any pending interrupt flags from button power-up
+    button.clearEventBits();
+    Serial.println("✓ Event bits cleared");
+
+    Serial.println("==== Button Initialization Complete ====\n");
+    return true;
 }
