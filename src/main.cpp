@@ -284,26 +284,43 @@ void transitionState(SystemState newState, const char* reason) {
 bool parseQRMetadata(const char* json) {
     StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, json);
-    
+
     if (error) {
-        Serial.print("✗ JSON parse failed: ");
+        Serial.println("✗ Error: Invalid JSON syntax");
+        Serial.print("  Details: ");
         Serial.println(error.c_str());
         return false;
     }
-    
+
     // Extract test name (required field)
     const char* test = doc["test"];
-    if (!test || strlen(test) == 0 || strlen(test) > 64) {
-        Serial.println("✗ Invalid test name (must be 1-64 chars)");
+    if (!test) {
+        Serial.println("✗ Error: Missing 'test' field");
         return false;
     }
-    strncpy(currentTestName, test, 64);
-    currentTestName[64] = '\0';
-    
+    if (strlen(test) == 0) {
+        Serial.println("✗ Error: 'test' field cannot be empty");
+        return false;
+    }
+    if (strlen(test) > 64) {
+        Serial.println("✗ Error: 'test' field too long (max 64 chars)");
+        return false;
+    }
+    strncpy(currentTestName, test, sizeof(currentTestName) - 1);
+    currentTestName[sizeof(currentTestName) - 1] = '\0';
+
     // Extract labels array (required field, min 1 label)
     JsonArray labels = doc["labels"];
-    if (!labels || labels.size() == 0 || labels.size() > 10) {
-        Serial.println("✗ Invalid labels array (must have 1-10 labels)");
+    if (!labels) {
+        Serial.println("✗ Error: Missing 'labels' field");
+        return false;
+    }
+    if (labels.size() == 0) {
+        Serial.println("✗ Error: 'labels' array cannot be empty");
+        return false;
+    }
+    if (labels.size() > 10) {
+        Serial.println("✗ Error: 'labels' array too large (max 10 labels)");
         return false;
     }
     

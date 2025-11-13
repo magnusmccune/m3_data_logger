@@ -158,6 +158,11 @@ void initializeStatusLED() {
     pinMode(LED_STATUS, OUTPUT);
     digitalWrite(LED_STATUS, LOW);
     Serial.println("✓ Status LED initialized (GPIO25)");
+
+    // Initialize RGB LED (GPIO26) to OFF to prevent floating HIGH
+    pinMode(LED_RGB, OUTPUT);
+    digitalWrite(LED_RGB, LOW);
+    Serial.println("✓ RGB LED initialized to OFF (GPIO26)");
 }
 
 // ===== Battery Monitoring (MAX17048 Fuel Gauge) =====
@@ -294,11 +299,12 @@ bool initializeQRReader() {
     // The Tiny Code Reader library is header-only with inline functions.
     // It doesn't have an explicit init function - just needs I2C bus ready.
     // We'll verify the device is present by attempting to read from it.
-    
+
     Serial.println("✓ Tiny Code Reader library loaded (header-only)");
     Serial.println("  Device detection will occur on first scan");
     Serial.println("  Expected I2C address: 0x0C");
-    
+    Serial.println("  NOTE: Continuously scans at ~5Hz, ~100mW power (no sleep mode available)");
+
     Serial.println("✓ QR Reader ready for scanning");
     Serial.println("==== QR Reader Initialization Complete ====\n");
     return true;
