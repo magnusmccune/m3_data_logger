@@ -61,6 +61,7 @@
 
 // I2C Device Addresses (Qwiic peripherals)
 #define ADDR_QWIIC_BUTTON    0x6F // SparkFun Qwiic Button - Red LED
+#define ADDR_QR_READER       0x0C // Tiny Code Reader (QR scanner)
 
 // Button Interrupt Pin
 #define BUTTON_INT_PIN       33   // Interrupt-capable GPIO for button press detection
@@ -137,6 +138,16 @@ void printHardwareInfo();
  * @return true if button initialized successfully, false otherwise
  */
 bool initializeQwiicButton();
+
+/**
+ * @brief Initialize Tiny Code Reader (QR scanner)
+ *
+ * Configures the Tiny Code Reader at I2C address 0x0C for QR code scanning.
+ * This function MUST be called after initializeI2C().
+ *
+ * @return true if QR reader initialized successfully, false otherwise
+ */
+bool initializeQRReader();
 
 // ===== External Object Declarations =====
 
