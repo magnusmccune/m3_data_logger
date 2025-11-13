@@ -49,19 +49,65 @@ bool initializeIMU() {
     imu.deviceReset();
     delay(100);  // Wait for reset to complete
 
-    // Configure accelerometer: ±4g range, 100Hz ODR
-    imu.setAccelDataRate(ISM_XL_ODR_104Hz);  // Closest to 100Hz
-    imu.setAccelFullScale(ISM_4g);
+    // Configure accelerometer: ±4g range, 104Hz ODR
+    if (!imu.setAccelDataRate(ISM_XL_ODR_104Hz)) {
+        Serial.println("[IMU] ERROR: Failed to set accelerometer data rate");
+        return false;
+    }
+    if (!imu.setAccelFullScale(ISM_4g)) {
+        Serial.println("[IMU] ERROR: Failed to set accelerometer full scale");
+        return false;
+    }
 
-    // Configure gyroscope: 500 DPS range, 100Hz ODR
-    imu.setGyroDataRate(ISM_GY_ODR_104Hz);   // Closest to 100Hz
-    imu.setGyroFullScale(ISM_500dps);
+    // Configure gyroscope: 500 DPS range, 104Hz ODR
+    if (!imu.setGyroDataRate(ISM_GY_ODR_104Hz)) {
+        Serial.println("[IMU] ERROR: Failed to set gyroscope data rate");
+        return false;
+    }
+    if (!imu.setGyroFullScale(ISM_500dps)) {
+        Serial.println("[IMU] ERROR: Failed to set gyroscope full scale");
+        return false;
+    }
 
     // Disable FIFO - we use software circular buffer
     imu.setFifoMode(ISM_BYPASS_MODE);
 
     Serial.println("[IMU] ISM330DHCX initialized successfully");
     Serial.println("[IMU] Config: Accel ±4g @ 104Hz, Gyro 500dps @ 104Hz");
+    
+    // Verify configuration by reading initial values
+    Serial.println("[IMU] Verifying sensor readings...");
+    sfe_ism_data_t testAccel, testGyro;
+    delay(20);  // Wait for first sample at 104Hz (~10ms + margin)
+    
+    if (!imu.getAccel(&testAccel)) {
+        Serial.println("[IMU] ERROR: Cannot read accelerometer after init");
+        return false;
+    }
+    
+    if (!imu.getGyro(&testGyro)) {
+        Serial.println("[IMU] ERROR: Cannot read gyroscope after init");
+        return false;
+    }
+    
+    Serial.printf("[IMU] Initial readings:\n");
+    Serial.printf("  Accel: X=%.3f Y=%.3f Z=%.3f g\n", 
+                  testAccel.xData, testAccel.yData, testAccel.zData);
+    Serial.printf("  Gyro:  X=%.3f Y=%.3f Z=%.3f dps\n", 
+                  testGyro.xData, testGyro.yData, testGyro.zData);
+    
+    // Sanity check: Total acceleration should be ~1g (gravity)
+    float accelMagnitude = sqrt(testAccel.xData * testAccel.xData + 
+                                 testAccel.yData * testAccel.yData + 
+                                 testAccel.zData * testAccel.zData);
+    
+    if (accelMagnitude < 0.8 || accelMagnitude > 1.2) {
+        Serial.printf("[IMU] WARNING: Unexpected accel magnitude: %.3f g (expected ~1.0g)\n", 
+                      accelMagnitude);
+        Serial.println("[IMU] This may indicate sensor not responding or configuration issue");
+    } else {
+        Serial.println("[IMU] ✓ Sensor readings verified");
+    }
 
     return true;
 }
@@ -74,11 +120,8 @@ bool readIMUSample(IMUSample* sample) {
         return false;
     }
 
-    // Check if new data is available before reading
-    if (!imu.checkStatus()) {
-        // No new data available yet
-        return false;
-    }
+    // Update timing BEFORE read attempt (prevents tight loop on failure)
+    lastSampleTime = millis();
 
     sfe_ism_data_t accelData;
     sfe_ism_data_t gyroData;
@@ -172,11 +215,10 @@ bool isSampleReady() {
     }
 
     uint32_t currentTime = millis();
-    uint32_t elapsed = currentTime - sessionStartTime;
-    uint32_t expectedSamples = elapsed / SAMPLE_INTERVAL_MS;
+    uint32_t elapsed = currentTime - lastSampleTime;  // Time since last READ ATTEMPT
     
-    if (expectedSamples > samplesCollected) {
-        return true;  // We're behind schedule, need to catch up
+    if (elapsed >= SAMPLE_INTERVAL_MS) {
+        return true;  // Time to attempt next sample
     }
     
     return false;
