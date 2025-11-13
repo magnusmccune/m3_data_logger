@@ -514,6 +514,21 @@ void loop() {
     // Update LED pattern (non-blocking)
     updateLEDPattern();
 
+    // Poll button status if interrupts aren't available (fallback mode)
+    // Check every 50ms to avoid excessive I2C traffic
+    static unsigned long lastPoll = 0;
+    unsigned long now = millis();
+    
+    if (!buttonPressed && (now - lastPoll >= 50)) {  // Poll if no interrupt pending
+        lastPoll = now;
+        
+        // Check if button has been clicked via I2C polling
+        if (button.hasBeenClicked()) {
+            buttonPressed = true;  // Set flag as if interrupt fired
+            Serial.println("[POLLING] Button press detected via I2C poll");
+        }
+    }
+
     // Call appropriate state handler
     switch (currentState) {
         case SystemState::IDLE:
@@ -535,7 +550,6 @@ void loop() {
 
     // Heartbeat logging (every 5 seconds)
     static unsigned long lastHeartbeat = 0;
-    unsigned long now = millis();
 
     if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         lastHeartbeat = now;
@@ -551,7 +565,6 @@ void loop() {
         Serial.println("s");
     }
 
-    // TODO (M3L-58): Button interrupt handling will be added
     // TODO (M3L-60): QR code event handling will be added
     // TODO (M3L-61): IMU data buffering and SD writes will be added
 }

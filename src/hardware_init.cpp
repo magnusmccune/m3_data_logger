@@ -256,22 +256,28 @@ bool initializeQwiicButton() {
     Serial.print(BUTTON_DEBOUNCE_MS);
     Serial.println(" ms");
 
-    // Enable pressed interrupt (triggers when button is pressed down)
-    // Note: Also available is clicked interrupt (triggers on press+release)
-    // We use pressed for immediate response
-    if (button.enablePressedInterrupt() != 0) {
-        Serial.println("✗ ERROR: Failed to enable button interrupt");
-        return false;
+    // Try to enable hardware interrupts (optional - will fall back to polling if this fails)
+    // Note: Some button firmware versions don't support interrupts, or INT pin may not be connected
+    uint8_t interruptResult = button.enablePressedInterrupt();
+    if (interruptResult != 0) {
+        Serial.println("⚠ WARNING: Button interrupt enable failed (error code: " + String(interruptResult) + ")");
+        Serial.println("  Falling back to polling mode (button will still work)");
+        Serial.println("  Reason: INT pin may not be connected or firmware doesn't support interrupts");
+        
+        // Continue without interrupts - we'll poll instead
+        Serial.println("✓ Button initialized in POLLING mode");
+    } else {
+        Serial.println("✓ Pressed interrupt enabled");
+        
+        // Configure GPIO pin for hardware interrupt
+        pinMode(BUTTON_INT_PIN, INPUT);
+        attachInterrupt(digitalPinToInterrupt(BUTTON_INT_PIN), buttonISR, FALLING);
+        Serial.print("✓ Hardware interrupt attached to GPIO");
+        Serial.println(BUTTON_INT_PIN);
+        Serial.println("✓ Button initialized in INTERRUPT mode");
     }
-    Serial.println("✓ Pressed interrupt enabled");
 
-    // Configure GPIO pin for hardware interrupt
-    pinMode(BUTTON_INT_PIN, INPUT);
-    attachInterrupt(digitalPinToInterrupt(BUTTON_INT_PIN), buttonISR, FALLING);
-    Serial.print("✓ Hardware interrupt attached to GPIO");
-    Serial.println(BUTTON_INT_PIN);
-
-    // Clear any pending interrupt flags from button power-up
+    // Clear any pending event flags from button power-up
     button.clearEventBits();
     Serial.println("✓ Event bits cleared");
 
