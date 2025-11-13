@@ -250,10 +250,16 @@ static bool createSessionFile(const char* testName) {
     snprintf(currentFilename, sizeof(currentFilename),
              "/data/%s_%s.csv", currentSessionID, testName);
 
-    // Sanitize filename (remove invalid characters)
-    for (size_t i = 0; currentFilename[i]; i++) {
+    // Sanitize ONLY the test name part (after "/data/<session_id>_")
+    // Find the start of the test name (after the last underscore before .csv)
+    size_t testNameStart = strlen("/data/") + strlen(currentSessionID) + 1; // +1 for underscore
+    for (size_t i = testNameStart; currentFilename[i] && currentFilename[i] != '.'; i++) {
         if (currentFilename[i] == ' ' || currentFilename[i] == '/' ||
-            currentFilename[i] == '\\' || currentFilename[i] == ':') {
+            currentFilename[i] == '\\' || currentFilename[i] == ':' ||
+            currentFilename[i] == '*' || currentFilename[i] == '?' ||
+            currentFilename[i] == '"' || currentFilename[i] == '<' ||
+            currentFilename[i] == '>' || currentFilename[i] == '|' ||
+            currentFilename[i] < 32) {
             currentFilename[i] = '_';
         }
     }
