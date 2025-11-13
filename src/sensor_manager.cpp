@@ -59,7 +59,7 @@ bool initializeIMU() {
     imu.setGyroFullScale(ISM_500dps);
 
     // Disable FIFO - we use software circular buffer
-    imu.setFIFOMode(ISM_BYPASS_MODE);
+    imu.setFifoMode(ISM_BYPASS_MODE);
 
     Serial.println("[IMU] ISM330DHCX initialized successfully");
     Serial.println("[IMU] Config: Accel ±4g @ 104Hz, Gyro 500dps @ 104Hz");
