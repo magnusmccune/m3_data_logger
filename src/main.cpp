@@ -21,6 +21,8 @@
 
 #include <Arduino.h>
 #include "hardware_init.h"
+#include "sensor_manager.h"         // For IMU data collection (M3L-61)
+#include "storage_manager.h"        // For SD card CSV logging (M3L-63)
 #include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
@@ -229,8 +231,8 @@ void transitionState(SystemState newState, const char* reason) {
             break;
 
         case SystemState::RECORDING:
-            // TODO (M3L-61): Stop IMU sampling
-            // TODO (M3L-62): Close data file on SD card
+            // Note: Cleanup handled in handleRecordingState() before transition
+            // (stopSampling() and endSession() called there)
             break;
 
         case SystemState::ERROR:
@@ -258,8 +260,9 @@ void transitionState(SystemState newState, const char* reason) {
         case SystemState::RECORDING:
             // LED will be set to solid ON by updateLEDPattern()
             Serial.println("→ Entered RECORDING state: Begin IMU data logging");
-            // TODO (M3L-61): Start IMU sampling at 100Hz
-            // TODO (M3L-62): Create new data file on SD card
+            // Start IMU sampling at 100Hz (M3L-61)
+            startSampling();
+            // Note: Session file already created in handleAwaitingQRState() after QR scan
             break;
 
         case SystemState::ERROR:
@@ -498,9 +501,22 @@ void handleAwaitingQRState() {
             // SUCCESS: Valid QR code with metadata parsed
             // Visual feedback: 3 fast blinks
             blinkButtonLED(3);
-            
-            // Transition to RECORDING state
-            transitionState(SystemState::RECORDING, "QR code scanned successfully");
+
+            // Start data logging session (M3L-64)
+            // Convert String array to const char* array for storage manager
+            const char* labelPtrs[10];
+            for (uint8_t i = 0; i < labelCount; i++) {
+                labelPtrs[i] = currentLabels[i].c_str();
+            }
+
+            if (startSession(currentTestName, labelPtrs, labelCount)) {
+                Serial.println("[Session] Recording session started");
+                // Transition to RECORDING state
+                transitionState(SystemState::RECORDING, "QR code scanned successfully");
+            } else {
+                Serial.println("[Session] ERROR: Failed to start recording session");
+                transitionState(SystemState::ERROR, "session start failed");
+            }
             return;
         }
     }
@@ -524,7 +540,7 @@ void handleRecordingState() {
     // Check for button press to stop recording
     if (buttonPressed) {
         uint32_t currentTime = millis();
-        
+
         // Debounce check FIRST
         if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
             buttonPressed = false;  // Ignore bounced press
@@ -535,7 +551,7 @@ void handleRecordingState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-            
+
             // Visual confirmation: blink LED briefly
             button.LEDon(255);  // Full brightness
             delay(100);  // Blocking OK for user feedback
@@ -544,6 +560,12 @@ void handleRecordingState() {
             // Clear interrupt flags
             button.clearEventBits();
 
+            // Stop sampling and end session (M3L-64)
+            stopSampling();
+            if (!endSession()) {
+                Serial.println("[Session] WARNING: Error ending session");
+            }
+
             // Stop recording and return to IDLE
             transitionState(SystemState::IDLE, "recording stopped via button");
         } else {
@@ -551,8 +573,33 @@ void handleRecordingState() {
         }
     }
 
-    // TODO (M3L-61): Sample IMU data at 100Hz
-    // TODO (M3L-62): Write buffered data to SD card periodically
+    // Sample IMU data at 100Hz (M3L-61)
+    if (isSampleReady()) {
+        IMUSample sample;
+        if (readIMUSample(&sample)) {
+            // Write sample to SD card (M3L-63)
+            if (!writeSample(sample)) {
+                Serial.println("[Recording] ERROR: Failed to write sample to SD");
+                // Continue recording despite error (graceful degradation)
+            }
+        } else {
+            Serial.println("[Recording] WARNING: Failed to read IMU sample");
+        }
+    }
+
+    // Print sampling statistics every 5 seconds
+    static uint32_t lastStatsTime = 0;
+    uint32_t currentTime = millis();
+    if (currentTime - lastStatsTime >= 5000) {
+        lastStatsTime = currentTime;
+
+        float actualRate = 0.0f;
+        float lossRate = 0.0f;
+        getSamplingStats(&actualRate, &lossRate);
+
+        Serial.printf("[Recording] Sample rate: %.1f Hz, Loss: %.2f%%\n",
+                      actualRate, lossRate);
+    }
 }
 
 /**
@@ -651,8 +698,17 @@ void setup() {
         Serial.println("   QR code scanning functionality disabled");
     }
 
-    // TODO (M3L-59): Initialize I2C sensors
-    // TODO (M3L-61): Initialize ISM330DHCX IMU
+    // Initialize IMU sensor (M3L-61)
+    if (!initializeIMU()) {
+        Serial.println("⚠ WARNING: IMU initialization failed");
+        Serial.println("   Sensor data collection disabled");
+    }
+
+    // Initialize storage manager (M3L-63)
+    if (!initializeStorage()) {
+        Serial.println("⚠ WARNING: Storage manager initialization failed");
+        Serial.println("   Data logging disabled");
+    }
 
     Serial.println("╔════════════════════════════════════════╗");
     Serial.println("║   Initialization Complete - Ready     ║");
