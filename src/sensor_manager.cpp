@@ -74,7 +74,12 @@ bool readIMUSample(IMUSample* sample) {
         return false;
     }
 
-    // Check if new data is available
+    // Check if new data is available before reading
+    if (!imu.checkStatus()) {
+        // No new data available yet
+        return false;
+    }
+
     sfe_ism_data_t accelData;
     sfe_ism_data_t gyroData;
 
