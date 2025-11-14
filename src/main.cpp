@@ -21,6 +21,8 @@
 
 #include <Arduino.h>
 #include "hardware_init.h"
+#include "sensor_manager.h"         // For IMU data collection (M3L-61)
+#include "storage_manager.h"        // For SD card CSV logging (M3L-63)
 #include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
@@ -57,9 +59,10 @@ volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
 uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
 
-// QR Code Metadata Storage (M3L-60)
-char currentTestName[65] = "";        // Test name from QR code (max 64 chars + null terminator)
-String currentLabels[10];             // Label array from QR code (max 10 labels)
+// QR Code Metadata Storage (M3L-60, M3L-64)
+char currentTestID[9] = "";           // Test ID from QR code (8 chars + null, e.g., "A3F9K2M7")
+char currentDescription[65] = "";     // Test description from QR code (max 64 chars + null)
+char currentLabels[10][33];           // Label array from QR code (max 10 labels, 32 chars + null)
 uint8_t labelCount = 0;               // Number of valid labels extracted
 bool metadataValid = false;           // Set to true after successful QR scan and parse
 
@@ -229,8 +232,8 @@ void transitionState(SystemState newState, const char* reason) {
             break;
 
         case SystemState::RECORDING:
-            // TODO (M3L-61): Stop IMU sampling
-            // TODO (M3L-62): Close data file on SD card
+            // Note: Cleanup handled in handleRecordingState() before transition
+            // (stopSampling() and endSession() called there)
             break;
 
         case SystemState::ERROR:
@@ -258,8 +261,9 @@ void transitionState(SystemState newState, const char* reason) {
         case SystemState::RECORDING:
             // LED will be set to solid ON by updateLEDPattern()
             Serial.println("→ Entered RECORDING state: Begin IMU data logging");
-            // TODO (M3L-61): Start IMU sampling at 100Hz
-            // TODO (M3L-62): Create new data file on SD card
+            // Start IMU sampling at 100Hz (M3L-61)
+            startSampling();
+            // Note: Session file already created in handleAwaitingQRState() after QR scan
             break;
 
         case SystemState::ERROR:
@@ -292,22 +296,42 @@ bool parseQRMetadata(const char* json) {
         return false;
     }
 
-    // Extract test name (required field)
-    const char* test = doc["test"];
-    if (!test) {
-        Serial.println("✗ Error: Missing 'test' field");
+    // Extract test_id (required field, 8 alphanumeric chars)
+    const char* test_id = doc["test_id"];
+    if (!test_id) {
+        Serial.println("✗ Error: Missing 'test_id' field");
         return false;
     }
-    if (strlen(test) == 0) {
-        Serial.println("✗ Error: 'test' field cannot be empty");
+    if (strlen(test_id) != 8) {
+        Serial.println("✗ Error: 'test_id' must be exactly 8 characters");
         return false;
     }
-    if (strlen(test) > 64) {
-        Serial.println("✗ Error: 'test' field too long (max 64 chars)");
+    // Validate alphanumeric (no special chars)
+    for (size_t i = 0; i < 8; i++) {
+        if (!isalnum(test_id[i])) {
+            Serial.println("✗ Error: 'test_id' must be alphanumeric only");
+            return false;
+        }
+    }
+    strncpy(currentTestID, test_id, sizeof(currentTestID) - 1);
+    currentTestID[sizeof(currentTestID) - 1] = '\0';
+
+    // Extract description (required field)
+    const char* description = doc["description"];
+    if (!description) {
+        Serial.println("✗ Error: Missing 'description' field");
         return false;
     }
-    strncpy(currentTestName, test, sizeof(currentTestName) - 1);
-    currentTestName[sizeof(currentTestName) - 1] = '\0';
+    if (strlen(description) == 0) {
+        Serial.println("✗ Error: 'description' field cannot be empty");
+        return false;
+    }
+    if (strlen(description) > 64) {
+        Serial.println("✗ Error: 'description' field too long (max 64 chars)");
+        return false;
+    }
+    strncpy(currentDescription, description, sizeof(currentDescription) - 1);
+    currentDescription[sizeof(currentDescription) - 1] = '\0';
 
     // Extract labels array (required field, min 1 label)
     JsonArray labels = doc["labels"];
@@ -329,7 +353,9 @@ bool parseQRMetadata(const char* json) {
     for (JsonVariant label : labels) {
         const char* labelStr = label.as<const char*>();
         if (labelStr && strlen(labelStr) > 0 && strlen(labelStr) <= 32) {
-            currentLabels[labelCount++] = String(labelStr);
+            strncpy(currentLabels[labelCount], labelStr, 32);
+            currentLabels[labelCount][32] = '\0';
+            labelCount++;
         } else {
             Serial.print("✗ Invalid label (must be 1-32 chars): ");
             Serial.println(labelStr ? labelStr : "<null>");
@@ -345,8 +371,10 @@ bool parseQRMetadata(const char* json) {
     
     // Log extracted metadata
     Serial.println("✓ QR metadata validated and extracted:");
-    Serial.print("  Test: ");
-    Serial.println(currentTestName);
+    Serial.print("  Test ID: ");
+    Serial.println(currentTestID);
+    Serial.print("  Description: ");
+    Serial.println(currentDescription);
     Serial.print("  Labels (");
     Serial.print(labelCount);
     Serial.print("): ");
@@ -498,9 +526,22 @@ void handleAwaitingQRState() {
             // SUCCESS: Valid QR code with metadata parsed
             // Visual feedback: 3 fast blinks
             blinkButtonLED(3);
-            
-            // Transition to RECORDING state
-            transitionState(SystemState::RECORDING, "QR code scanned successfully");
+
+            // Start data logging session (M3L-64)
+            // Convert char array to const char* array for storage manager
+            const char* labelPtrs[10];
+            for (uint8_t i = 0; i < labelCount; i++) {
+                labelPtrs[i] = currentLabels[i];  // Safe - pointer to static array
+            }
+
+            if (startSession(currentTestID, currentDescription, labelPtrs, labelCount)) {
+                Serial.println("[Session] Recording session started");
+                // Transition to RECORDING state
+                transitionState(SystemState::RECORDING, "QR code scanned successfully");
+            } else {
+                Serial.println("[Session] ERROR: Failed to start recording session");
+                transitionState(SystemState::ERROR, "session start failed");
+            }
             return;
         }
     }
@@ -524,7 +565,7 @@ void handleRecordingState() {
     // Check for button press to stop recording
     if (buttonPressed) {
         uint32_t currentTime = millis();
-        
+
         // Debounce check FIRST
         if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
             buttonPressed = false;  // Ignore bounced press
@@ -535,14 +576,19 @@ void handleRecordingState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-            
-            // Visual confirmation: blink LED briefly
-            button.LEDon(255);  // Full brightness
-            delay(100);  // Blocking OK for user feedback
-            button.LEDoff();
+
+            // Visual confirmation: quick non-blocking blink
+            button.LEDon(255);
+            // Don't delay - LED will turn off on next state's updateLEDPattern()
 
             // Clear interrupt flags
             button.clearEventBits();
+
+            // Stop sampling and end session (M3L-64)
+            stopSampling();
+            if (!endSession()) {
+                Serial.println("[Session] WARNING: Error ending session");
+            }
 
             // Stop recording and return to IDLE
             transitionState(SystemState::IDLE, "recording stopped via button");
@@ -551,8 +597,34 @@ void handleRecordingState() {
         }
     }
 
-    // TODO (M3L-61): Sample IMU data at 100Hz
-    // TODO (M3L-62): Write buffered data to SD card periodically
+    // Sample IMU data at 100Hz (M3L-61)
+    if (isSampleReady()) {
+        IMUSample sample;
+        readIMUSample(&sample);  // Adds to circular buffer
+    }
+
+    // Drain circular buffer to SD card
+    IMUSample sample;
+    while (getBufferedSample(&sample)) {
+        if (!writeSample(sample)) {
+            Serial.println("[Recording] ERROR: Failed to write sample to SD");
+            break;
+        }
+    }
+
+    // Print sampling statistics every 5 seconds
+    static uint32_t lastStatsTime = 0;
+    uint32_t currentTime = millis();
+    if (currentTime - lastStatsTime >= 5000) {
+        lastStatsTime = currentTime;
+
+        float actualRate = 0.0f;
+        float lossRate = 0.0f;
+        getSamplingStats(&actualRate, &lossRate);
+
+        Serial.printf("[Recording] Sample rate: %.1f Hz, Loss: %.2f%%\n",
+                      actualRate, lossRate);
+    }
 }
 
 /**
@@ -612,7 +684,7 @@ void setup() {
 
     Serial.println();
     Serial.println("╔════════════════════════════════════════╗");
-    Serial.println("║      M3 Data Logger - Initializing    ║");
+    Serial.println("║      M3 Data Logger - Initializing     ║");
     Serial.println("╚════════════════════════════════════════╝");
     Serial.print("Firmware Version: ");
     Serial.println(FW_VERSION);
@@ -651,11 +723,20 @@ void setup() {
         Serial.println("   QR code scanning functionality disabled");
     }
 
-    // TODO (M3L-59): Initialize I2C sensors
-    // TODO (M3L-61): Initialize ISM330DHCX IMU
+    // Initialize IMU sensor (M3L-61)
+    if (!initializeIMU()) {
+        Serial.println("⚠ WARNING: IMU initialization failed");
+        Serial.println("   Sensor data collection disabled");
+    }
+
+    // Initialize storage manager (M3L-63)
+    if (!initializeStorage()) {
+        Serial.println("⚠ WARNING: Storage manager initialization failed");
+        Serial.println("   Data logging disabled");
+    }
 
     Serial.println("╔════════════════════════════════════════╗");
-    Serial.println("║   Initialization Complete - Ready     ║");
+    Serial.println("║   Initialization Complete - Ready      ║");
     Serial.println("╚════════════════════════════════════════╝");
     Serial.println();
     Serial.println("Current State: IDLE");

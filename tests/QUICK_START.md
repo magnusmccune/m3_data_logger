@@ -70,7 +70,7 @@ pio device monitor --baud 115200
 **Expected Serial Output**:
 ```
 ╔════════════════════════════════════════╗
-║      M3 Data Logger - Initializing    ║
+║      M3 Data Logger - Initializing     ║
 ╚════════════════════════════════════════╝
 Firmware Version: 0.2.0-dev
 ...
