@@ -4,17 +4,20 @@ This file provides a guide to all project documentation.
 
 ## Primary Documentation
 
-### CLAUDE.md (6.3 KB)
+### CLAUDE.md (11.4 KB)
 **Location**: `/CLAUDE.md`
 **Purpose**: Consolidated project documentation for Claude Code agents
+**Last Updated**: 2025-11-14
 **Contains**:
 - Hardware setup and I2C device map
-- Project status and completion tracking
+- Project status and completion tracking (NOW/NEXT/LATER phasing)
 - Development workflow and build commands
-- Architecture (state machine, QR metadata, data formats)
-- Critical gotchas (SD card, ISR constraints, timing)
-- Key learnings from all completed tasks
-- File locations and project phasing
+- Architecture (state machine, sensor_manager, storage_manager)
+- Data formats (QR with test_id, CSV tabular, metadata.json)
+- Critical gotchas (SD card, ISR constraints, IMU timing, path sanitization)
+- Key learnings from all completed tasks (M3L-57 through M3L-64)
+- File locations organized by category
+- Common tasks (QR generation with venv, sampling rate changes)
 
 **This is the single source of truth for active development.**
 
@@ -48,13 +51,20 @@ This file provides a guide to all project documentation.
 ## Archived Documentation
 
 ### Completed Task Documentation
-**Location**: `/plans/archive/completed/` (160 KB total)
+**Location**: `/plans/archive/` (160 KB total)
 **Contains**: PRDs and design briefs for completed Linear tasks
 - M3L-57: State machine architecture
 - M3L-58: Button interrupt handler
 - M3L-60: QR code scanner integration
 
-**Note**: All critical learnings from these archived docs have been extracted and consolidated into CLAUDE.md.
+### Active Task Documentation
+**Location**: `/plans/` directory
+**Contains**: Documentation for in-progress tasks
+- `prd-data-logging-core.md`: PRD for M3L-61/63/64 (IMU, storage, session management)
+- `debugging-imu-zeros.md`: Active debugging plan for IMU zero values issue
+- `manual-testing.md`: Manual test procedures
+
+**Note**: All critical learnings from completed docs are extracted and consolidated into CLAUDE.md.
 
 ## Tests Documentation
 
@@ -72,13 +82,25 @@ See `/tests/README.md` for complete testing documentation index.
 
 | File | Size | Status |
 |------|------|--------|
-| CLAUDE.md | 6.3 KB | ✅ Under 10KB target |
+| CLAUDE.md | 11.4 KB | ⚠️ Active development (consolidate when M3L-62 completes) |
 | .serena/memories/hardware_architecture.md | 1.5 KB | ✅ Consolidated |
 | PRD.md | 9.9 KB | ℹ️ High-level spec |
 | init_prompt.md | 1.9 KB | ℹ️ Historical context |
-| plans/archive/completed/ | 160 KB | 📦 Archived |
+| plans/archive/ | 160 KB | 📦 Archived |
+| plans/debugging-imu-zeros.md | 8.9 KB | 🔧 Active debugging |
+| plans/prd-data-logging-core.md | 7.8 KB | 📋 Active PRD |
 
 ## Documentation Update History
+
+**2025-11-14**: M3L-61/63/64 Core Logging Consolidation
+- Updated CLAUDE.md from 6.3KB to 11.4KB (+5.1KB)
+- Added comprehensive M3L-61/63/64 Key Learnings section
+- Updated data formats (QR with test_id, CSV tabular, metadata.json)
+- Added Critical Gotchas #7 (IMU timing) and #8 (path sanitization)
+- Reorganized File Locations into categories
+- Updated Architecture section with sensor_manager/storage_manager
+- Expanded Common Tasks with QR generator venv setup
+- Updated Project Status to NOW phase (M3L-61/63/64 in progress)
 
 **2025-11-12**: Major consolidation
 - Reduced CLAUDE.md from 45KB to 6.3KB (86% reduction)
@@ -107,8 +129,12 @@ See `/tests/README.md` for complete testing documentation index.
 - Move PRDs and design briefs to `/plans/archive/completed/`
 - Extract key learnings to CLAUDE.md before archiving
 
-**Keep CLAUDE.md under 10KB** by:
+**Keep CLAUDE.md manageable** by:
 - Using concise bullet points over prose
-- Archiving completed task details
+- Archiving completed task details after deployment
 - Focusing on "what developers need to know now"
 - Linking to archived docs for historical details
+- Consolidating similar learnings (avoid duplication)
+- Moving debugging plans to /plans/ when resolved
+
+**Note**: CLAUDE.md may temporarily exceed 10KB during active development phases with multiple in-progress features. Consolidate when tasks complete.

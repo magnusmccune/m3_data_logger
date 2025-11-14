@@ -41,7 +41,7 @@ TESTS_FAILED=0
 
 print_header() {
     echo -e "\n${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║           M3 Data Logger - Build Validation Tests         ║${NC}"
+    echo -e "${BLUE}║           M3 Data Logger - Build Validation Tests          ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}\n"
 }
 

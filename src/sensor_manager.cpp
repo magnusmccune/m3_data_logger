@@ -123,6 +123,10 @@ bool readIMUSample(IMUSample* sample) {
     // Update timing BEFORE read attempt (prevents tight loop on failure)
     lastSampleTime = millis();
 
+    // Small delay to ensure IMU has updated data ready
+    // This prevents reading stale/zero values when polling too fast
+    delayMicroseconds(500);  // 0.5ms delay
+
     sfe_ism_data_t accelData;
     sfe_ism_data_t gyroData;
 

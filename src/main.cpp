@@ -684,7 +684,7 @@ void setup() {
 
     Serial.println();
     Serial.println("╔════════════════════════════════════════╗");
-    Serial.println("║      M3 Data Logger - Initializing    ║");
+    Serial.println("║      M3 Data Logger - Initializing     ║");
     Serial.println("╚════════════════════════════════════════╝");
     Serial.print("Firmware Version: ");
     Serial.println(FW_VERSION);
@@ -736,7 +736,7 @@ void setup() {
     }
 
     Serial.println("╔════════════════════════════════════════╗");
-    Serial.println("║   Initialization Complete - Ready     ║");
+    Serial.println("║   Initialization Complete - Ready      ║");
     Serial.println("╚════════════════════════════════════════╝");
     Serial.println();
     Serial.println("Current State: IDLE");

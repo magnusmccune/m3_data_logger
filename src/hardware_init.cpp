@@ -183,7 +183,7 @@ float getBatteryPercent() {
 
 void printHardwareInfo() {
     Serial.println("\n╔════════════════════════════════════════════╗");
-    Serial.println("║   M3 Data Logger - Hardware Information   ║");
+    Serial.println("║   M3 Data Logger - Hardware Information    ║");
     Serial.println("╚════════════════════════════════════════════╝");
     Serial.println();
 
