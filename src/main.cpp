@@ -286,7 +286,7 @@ void transitionState(SystemState newState, const char* reason) {
  * @return true if valid metadata extracted, false otherwise
  */
 bool parseQRMetadata(const char* json) {
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<384> doc;  // Increased from 256 to support new QR format
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
@@ -398,6 +398,33 @@ bool scanQRCode() {
     if (tiny_code_reader_read(&results)) {
         if (results.content_length > 0) {
             Serial.println("✓ QR code detected, parsing metadata...");
+            
+            // Debug: Display raw JSON content and size
+            Serial.print("  Raw JSON (");
+            Serial.print(results.content_length);
+            Serial.print(" bytes): ");
+
+            // Use Serial.write() to print exact bytes without relying on null termination
+            // This ensures we print exactly what we received, avoiding truncation
+            Serial.write(results.content_bytes, results.content_length);
+            Serial.println();  // Add newline after content
+
+            // Additional debug: Check for non-printable characters
+            bool hasNonPrintable = false;
+            for (uint16_t i = 0; i < results.content_length; i++) {
+                char c = results.content_bytes[i];
+                if (c < 32 && c != '\n' && c != '\r' && c != '\t') {
+                    hasNonPrintable = true;
+                    Serial.print("  Warning: Non-printable character at position ");
+                    Serial.print(i);
+                    Serial.print(" (byte value: ");
+                    Serial.print((int)c);
+                    Serial.println(")");
+                }
+            }
+            if (!hasNonPrintable) {
+                Serial.println("  Content contains only printable characters");
+            }
             
             // QR code found, parse JSON metadata
             return parseQRMetadata((const char*)results.content_bytes);

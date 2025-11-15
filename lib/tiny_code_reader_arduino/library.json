@@ -1,0 +1,23 @@
+{
+  "name": "tiny_code_reader_arduino",
+  "version": "0.0.0+20251112201336-esp32-patch",
+  "description": "Patched version of Tiny Code Reader Arduino library with ESP32 I2C chunking fix",
+  "keywords": "i2c, qr, barcode, code reader, esp32",
+  "authors": [
+    {
+      "name": "Useful Sensors",
+      "url": "https://usefulsensors.com"
+    },
+    {
+      "name": "M3 Data Logger Project",
+      "maintainer": true,
+      "note": "ESP32 I2C fix applied"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usefulsensors/tiny_code_reader_arduino"
+  },
+  "frameworks": "arduino",
+  "platforms": "*"
+}

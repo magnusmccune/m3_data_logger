@@ -12,8 +12,8 @@ New format (M3L-64):
 }
 
 Usage:
+    python generate_qr.py --description "walking_outdoor" --labels walking outdoor        # Auto-generates test_id
     python generate_qr.py --test-id A3F9K2M7 --description "walking_outdoor" --labels walking outdoor
-    python generate_qr.py --random                           # Generate random test_id
     python generate_qr.py --help
 """
 
@@ -149,24 +149,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate QR with specific test ID
-  python generate_qr.py --test-id A3F9K2M7 --description "walking_outdoor" --labels walking outdoor
+  # Generate QR with auto-generated test ID (default)
+  python generate_qr.py --description "walking_outdoor" --labels walking outdoor
 
-  # Generate QR with random test ID
-  python generate_qr.py --random --description "running_indoor" --labels running indoor
+  # Generate QR with specific test ID (override)
+  python generate_qr.py --test-id A3F9K2M7 --description "running_indoor" --labels running indoor
 
   # Save to file
-  python generate_qr.py --random --description "test1" --labels demo --output test1_qr.png
+  python generate_qr.py --description "test1" --labels demo --output test1_qr.png
 
   # Generate batch of QR codes
   for i in {1..5}; do
-    python generate_qr.py --random --description "test$i" --labels demo --output "test${i}_qr.png" --no-show
+    python generate_qr.py --description "test$i" --labels demo --output "test${i}_qr.png" --no-show
   done
         """
     )
 
-    parser.add_argument('--test-id', type=str, help='8-character alphanumeric test ID (e.g., A3F9K2M7)')
-    parser.add_argument('--random', action='store_true', help='Generate random test ID')
+    parser.add_argument('--test-id', type=str, help='8-character alphanumeric test ID (optional, auto-generated if not provided)')
     parser.add_argument('--description', type=str, required=True, help='Test description (1-64 chars)')
     parser.add_argument('--labels', nargs='+', required=True, help='Labels (1-10 labels, each 1-32 chars)')
     parser.add_argument('--output', '-o', type=str, help='Output PNG file path')
@@ -174,14 +173,12 @@ Examples:
 
     args = parser.parse_args()
 
-    # Determine test_id
-    if args.random:
-        test_id = generate_short_uuid()
-        print(f"Generated random test_id: {test_id}")
-    elif args.test_id:
+    # Determine test_id (auto-generate if not provided)
+    if args.test_id:
         test_id = args.test_id
     else:
-        parser.error("Must provide either --test-id or --random")
+        test_id = generate_short_uuid()
+        print(f"Generated test_id: {test_id}")
 
     try:
         generate_qr_code(

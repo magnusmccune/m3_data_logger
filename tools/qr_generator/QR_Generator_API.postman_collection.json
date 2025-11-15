@@ -1,0 +1,181 @@
+{
+  "info": {
+    "name": "QR Generator API",
+    "description": "M3 Data Logger QR Code Generator REST API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Check if the API service is healthy and running"
+      },
+      "response": []
+    },
+    {
+      "name": "Service Info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": ["{{base_url}}"]
+        },
+        "description": "Get API service information and available endpoints"
+      },
+      "response": []
+    },
+    {
+      "name": "Generate QR (Auto ID)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"walking_outdoor\",\n  \"labels\": [\"walking\", \"outdoor\", \"test\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Generate QR code with auto-generated test ID. Check X-Test-ID response header for the generated ID."
+      },
+      "response": []
+    },
+    {
+      "name": "Generate QR (Custom ID)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"running_indoor\",\n  \"labels\": [\"running\", \"indoor\"],\n  \"test_id\": \"CUSTOM99\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Generate QR code with custom test ID (must be exactly 8 alphanumeric characters)"
+      },
+      "response": []
+    },
+    {
+      "name": "Error: Invalid Test ID (Too Short)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"test\",\n  \"labels\": [\"demo\"],\n  \"test_id\": \"SHORT\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Test validation: test_id must be exactly 8 characters"
+      },
+      "response": []
+    },
+    {
+      "name": "Error: Invalid Test ID (Special Chars)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"test\",\n  \"labels\": [\"demo\"],\n  \"test_id\": \"TEST@123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Test validation: test_id must be alphanumeric only"
+      },
+      "response": []
+    },
+    {
+      "name": "Error: Description Too Long",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"This is a very long description that exceeds the maximum allowed length of 64 characters\",\n  \"labels\": [\"demo\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Test validation: description must be ≤64 characters"
+      },
+      "response": []
+    },
+    {
+      "name": "Error: Too Many Labels",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"test\",\n  \"labels\": [\"l1\", \"l2\", \"l3\", \"l4\", \"l5\", \"l6\", \"l7\", \"l8\", \"l9\", \"l10\", \"l11\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate",
+          "host": ["{{base_url}}"],
+          "path": ["generate"]
+        },
+        "description": "Test validation: maximum 10 labels allowed"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ]
+}
