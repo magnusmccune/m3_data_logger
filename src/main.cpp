@@ -403,7 +403,28 @@ bool scanQRCode() {
             Serial.print("  Raw JSON (");
             Serial.print(results.content_length);
             Serial.print(" bytes): ");
-            Serial.println((const char*)results.content_bytes);
+
+            // Use Serial.write() to print exact bytes without relying on null termination
+            // This ensures we print exactly what we received, avoiding truncation
+            Serial.write(results.content_bytes, results.content_length);
+            Serial.println();  // Add newline after content
+
+            // Additional debug: Check for non-printable characters
+            bool hasNonPrintable = false;
+            for (uint16_t i = 0; i < results.content_length; i++) {
+                char c = results.content_bytes[i];
+                if (c < 32 && c != '\n' && c != '\r' && c != '\t') {
+                    hasNonPrintable = true;
+                    Serial.print("  Warning: Non-printable character at position ");
+                    Serial.print(i);
+                    Serial.print(" (byte value: ");
+                    Serial.print((int)c);
+                    Serial.println(")");
+                }
+            }
+            if (!hasNonPrintable) {
+                Serial.println("  Content contains only printable characters");
+            }
             
             // QR code found, parse JSON metadata
             return parseQRMetadata((const char*)results.content_bytes);
