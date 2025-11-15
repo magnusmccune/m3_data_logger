@@ -286,7 +286,7 @@ void transitionState(SystemState newState, const char* reason) {
  * @return true if valid metadata extracted, false otherwise
  */
 bool parseQRMetadata(const char* json) {
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<384> doc;  // Increased from 256 to support new QR format
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
@@ -398,6 +398,12 @@ bool scanQRCode() {
     if (tiny_code_reader_read(&results)) {
         if (results.content_length > 0) {
             Serial.println("✓ QR code detected, parsing metadata...");
+            
+            // Debug: Display raw JSON content and size
+            Serial.print("  Raw JSON (");
+            Serial.print(results.content_length);
+            Serial.print(" bytes): ");
+            Serial.println((const char*)results.content_bytes);
             
             // QR code found, parse JSON metadata
             return parseQRMetadata((const char*)results.content_bytes);
