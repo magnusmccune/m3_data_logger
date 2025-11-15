@@ -4,20 +4,19 @@ This file provides a guide to all project documentation.
 
 ## Primary Documentation
 
-### CLAUDE.md (11.4 KB)
+### CLAUDE.md (10.8 KB)
 **Location**: `/CLAUDE.md`
 **Purpose**: Consolidated project documentation for Claude Code agents
-**Last Updated**: 2025-11-14
+**Last Updated**: 2025-11-15
 **Contains**:
 - Hardware setup and I2C device map
 - Project status and completion tracking (NOW/NEXT/LATER phasing)
 - Development workflow and build commands
-- Architecture (state machine, sensor_manager, storage_manager)
-- Data formats (QR with test_id, CSV tabular, metadata.json)
-- Critical gotchas (SD card, ISR constraints, IMU timing, path sanitization)
-- Key learnings from all completed tasks (M3L-57 through M3L-64)
+- Architecture (state machine, RGB LED dual-channel status, data formats)
+- Critical gotchas (SD card, ISR constraints, ESP32 I2C transaction semantics, IMU timing, QR serial output)
+- Recent learnings with patterns (ESP32 I2C, IMU timing, core architecture)
 - File locations organized by category
-- Common tasks (QR generation with venv, sampling rate changes)
+- Common tasks (QR generation CLI + REST API, sampling rate changes)
 
 **This is the single source of truth for active development.**
 
@@ -61,10 +60,9 @@ This file provides a guide to all project documentation.
 **Location**: `/plans/` directory
 **Contains**: Documentation for in-progress tasks
 - `prd-data-logging-core.md`: PRD for M3L-61/63/64 (IMU, storage, session management)
-- `debugging-imu-zeros.md`: Active debugging plan for IMU zero values issue
 - `manual-testing.md`: Manual test procedures
 
-**Note**: All critical learnings from completed docs are extracted and consolidated into CLAUDE.md.
+**Note**: All critical learnings from completed docs are extracted and consolidated into CLAUDE.md. Resolved debugging plans are moved to `/plans/archive/`.
 
 ## Tests Documentation
 
@@ -82,25 +80,34 @@ See `/tests/README.md` for complete testing documentation index.
 
 | File | Size | Status |
 |------|------|--------|
-| CLAUDE.md | 11.4 KB | ⚠️ Active development (consolidate when M3L-62 completes) |
+| CLAUDE.md | 10.8 KB | ✅ Consolidated (2025-11-15) |
+| README.md | 3.2 KB | ✅ Updated with QR API |
 | .serena/memories/hardware_architecture.md | 1.5 KB | ✅ Consolidated |
 | PRD.md | 9.9 KB | ℹ️ High-level spec |
 | init_prompt.md | 1.9 KB | ℹ️ Historical context |
-| plans/archive/ | 160 KB | 📦 Archived |
-| plans/debugging-imu-zeros.md | 8.9 KB | 🔧 Active debugging |
+| plans/archive/ | 169 KB | 📦 Archived (includes resolved debugging) |
 | plans/prd-data-logging-core.md | 7.8 KB | 📋 Active PRD |
+| tools/qr_generator/README.md | 7.2 KB | 📖 QR API docs |
 
 ## Documentation Update History
+
+**2025-11-15**: Post-M3L-61/63/64/66/67 Consolidation
+- Consolidated CLAUDE.md Recent Learnings section (11.4KB → 10.8KB)
+- Promoted ESP32 I2C pattern to Critical Gotchas section
+- Removed redundant learning entries, focused on reusable patterns
+- Updated README.md with QR Generator API + Docker information
+- Added current project status with completed task checklist
+- Archived `debugging-imu-zeros.md` to `plans/archive/` (resolved)
+- Updated DOCUMENTATION_INDEX.md with current file sizes and status
 
 **2025-11-14**: M3L-61/63/64 Core Logging Consolidation
 - Updated CLAUDE.md from 6.3KB to 11.4KB (+5.1KB)
 - Added comprehensive M3L-61/63/64 Key Learnings section
 - Updated data formats (QR with test_id, CSV tabular, metadata.json)
-- Added Critical Gotchas #7 (IMU timing) and #8 (path sanitization)
+- Added Critical Gotchas (IMU timing, path sanitization, ESP32 I2C)
 - Reorganized File Locations into categories
 - Updated Architecture section with sensor_manager/storage_manager
 - Expanded Common Tasks with QR generator venv setup
-- Updated Project Status to NOW phase (M3L-61/63/64 in progress)
 
 **2025-11-12**: Major consolidation
 - Reduced CLAUDE.md from 45KB to 6.3KB (86% reduction)

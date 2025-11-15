@@ -1,15 +1,16 @@
 # M3 Data Logger
 
-IoT-based time-series data collection system for generating sensor datasets with metadata framing.
+IoT time-series data logger for SparkFun hardware. Records IMU sensor data at 100Hz with QR code metadata tagging for ML datasets.
 
 ## Hardware Components
 
-| Component | Part Number | Purpose |
-|-----------|-------------|---------|
-| SparkFun DataLogger IoT | DEV-22462 | Main controller board (ESP32, microSD, Qwiic) |
-| ISM330DHCX IMU Breakout | SEN-19764 | 6DoF inertial measurement (accel + gyro) |
-| Qwiic Button - Red LED | BOB-15932 | Recording trigger and status indicator |
-| Tiny Code Reader | SEN-23352 | QR code scanning for metadata capture |
+| Component | Part Number | I2C Addr | Purpose |
+|-----------|-------------|----------|---------|
+| SparkFun DataLogger IoT | DEV-22462 | - | Main controller (ESP32, microSD, Qwiic) |
+| ISM330DHCX IMU Breakout | SEN-19764 | 0x6B | 6DoF inertial measurement (100Hz) |
+| SAM-M8Q GPS Module | GPS-15210 | 0x42 | Time sync and location |
+| Qwiic Button - Red LED | BOB-15932 | 0x6F | Recording trigger |
+| Tiny Code Reader | SEN-23352 | 0x0C | QR code metadata scanner |
 
 **All sensors connect via Qwiic (I2C)** - no soldering required!
 
@@ -23,7 +24,7 @@ IoT-based time-series data collection system for generating sensor datasets with
 
 2. **Hardware Setup**
    - Connect all Qwiic sensors to the DataLogger IoT board using Qwiic cables
-   - Insert a microSD card (formatted as FAT32)
+   - Insert a microSD card (formatted as FAT32 with MBR partition table - see CLAUDE.md)
    - Connect USB-C cable to computer
 
 ### Build and Upload
@@ -39,24 +40,14 @@ pio run --target upload
 pio device monitor --baud 115200
 ```
 
-Expected serial output:
-```
-==================================
-  M3 Data Logger - Initializing
-==================================
+Expected serial output shows:
+- 6 I2C devices detected: 0x0C, 0x36, 0x42, 0x6B, 0x6F, 0x7E
+- SD card mounted with size
+- Free heap ~302KB
+- IMU initialization with test readings
+- GPS status (acquiring/locked)
 
-Board: SparkFun DataLogger IoT (DEV-22462)
-MCU: ESP32
-CPU Frequency: 240 MHz
-Flash Size: 4 MB
-Free Heap: 298516 bytes
-
-✓ Serial initialized (115200 baud)
-✓ Board initialization complete
-
-Ready for sensor integration...
-==================================
-```
+**Troubleshooting**: If "Invalid head of packet" error, hold BOOT button during upload or reduce upload_speed to 115200 in platformio.ini.
 
 ## Project Structure
 
@@ -77,22 +68,71 @@ m3_data_logger/
 
 ## Workflow Overview
 
-1. **Press Button** → LED blinks (awaiting QR scan)
-2. **Scan QR Code** → Captures metadata (test name, labels)
-3. **Recording Starts** → LED solid, IMU data logged to microSD
-4. **Press Button** → Recording stops, LED off
+1. **Press Button** → RGB LED blinks yellow (awaiting QR scan, 30s timeout)
+2. **Scan QR Code** → Captures metadata (test_id, description, labels)
+3. **Recording Starts** → LED solid green/blue, IMU data logged to microSD at 100Hz
+4. **Press Button** → Recording stops, LED returns to breathing pattern
 
-See [CLAUDE.md](CLAUDE.md) for detailed developer documentation.
-See [PRD.md](PRD.md) for product requirements and roadmap.
+**Data Formats**:
+- CSV: `/data/session_YYYYMMDD_HHMMSS.csv` with timestamp, lat/lon, accel_xyz, gyro_xyz
+- Metadata: `/data/metadata.json` with session info, test_id mapping, time source
+
+## QR Code Generation
+
+Generate test QR codes using the CLI tool or REST API:
+
+**CLI Tool**:
+```bash
+cd tools/qr_generator
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python generate_qr.py --description "walking_outdoor" --labels "walking,outdoor"
+```
+
+**REST API** (Docker):
+```bash
+cd tools/qr_generator
+docker-compose up
+# In another terminal:
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"description": "walking_outdoor", "labels": ["walking", "outdoor"]}' \
+  --output qr_code.png
+```
+
+See `tools/qr_generator/README.md` for full API documentation and Postman guide.
+
+## Documentation
+
+- **[CLAUDE.md](CLAUDE.md)**: Complete developer documentation (hardware, architecture, gotchas, patterns)
+- **[PRD.md](PRD.md)**: Product requirements and roadmap
+- **[tools/qr_generator/README.md](tools/qr_generator/README.md)**: QR Generator API documentation
+- **[docs/](docs/)**: Testing guides and procedures
 
 ## Development Status
 
-**Current Phase**: NOW (MVP)
-- [x] Project initialization
-- [ ] State machine implementation
-- [ ] Sensor integration
-- [ ] Data logging to microSD
-- [ ] QR code scanning
+**Current Phase**: NOW - Core Data Logging & GPS Time Sync
+
+**Completed**:
+- [x] Project initialization and hardware setup
+- [x] State machine implementation (M3L-57)
+- [x] Button interrupt handler (M3L-58)
+- [x] QR code scanner integration (M3L-60)
+- [x] IMU sensor integration at 100Hz (M3L-61)
+- [x] MicroSD storage with CSV format (M3L-63)
+- [x] Session management with metadata.json (M3L-64)
+- [x] QR Generator CLI + REST API + Docker (M3L-66/67)
+- [x] ESP32 I2C fix for Tiny Code Reader
+
+**In Progress**:
+- [ ] GPS time synchronization (M3L-77 Epic)
+  - [ ] time_manager module (M3L-78)
+  - [ ] GPS integration (M3L-79)
+  - [ ] RGB LED dual-channel status (M3L-80)
+  - [ ] CSV timestamps with GPS (M3L-81)
+  - [ ] GPS location logging (M3L-82)
+
+**Build Stats**: 7.8% RAM, 32.1% Flash, 302KB free heap
 
 See Linear project: [M3-Data-Logger](https://linear.app/m3labs/project/m3-data-logger-d5a8ffada01d)
 
