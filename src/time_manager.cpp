@@ -7,7 +7,16 @@
  */
 
 #include "time_manager.h"
-#include "hardware_init.h"  // For access to global gps object
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>  // For SFE_UBLOX_GNSS class
+
+// Declare external GPS object (defined in hardware_init.cpp)
+extern SFE_UBLOX_GNSS gps;
+
+// ===== Forward Declarations =====
+
+static uint64_t convertToUnixEpochMs(uint16_t year, uint8_t month, uint8_t day,
+                                      uint8_t hour, uint8_t minute, uint8_t second,
+                                      uint32_t nanosecond);
 
 // ===== Internal State =====
 
