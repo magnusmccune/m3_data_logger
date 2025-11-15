@@ -25,15 +25,16 @@ enum TimeSource {
 /**
  * @brief Initialize time manager
  *
- * Sets up baseline millis() timing. GPS integration will be added in M3L-79.
+ * Sets up time management system with GPS/millis fallback support.
  */
 void initTimeManager();
 
 /**
  * @brief Update time manager state
  *
- * Should be called regularly in main loop to update GPS time and check lock status.
- * Currently a no-op, will poll GPS in M3L-79.
+ * Should be called regularly in main loop to poll GPS and update lock status.
+ * Polls GPS for new PVT data (Position/Velocity/Time) at 1Hz.
+ * Automatically switches between GPS and millis() based on lock status.
  */
 void updateTime();
 
@@ -50,8 +51,8 @@ uint64_t getTimestampMs();
 /**
  * @brief Get current timestamp in ISO-8601 format
  *
- * Returns formatted timestamp string like "2025-11-14T14:30:52Z".
- * Currently returns placeholder based on millis(), will use GPS time in M3L-79.
+ * Returns formatted timestamp string like "2025-11-14T14:30:52.123Z" when GPS locked,
+ * or "millis_<seconds>.<milliseconds>" when using millis() fallback.
  *
  * @return ISO-8601 formatted timestamp string
  */
@@ -69,7 +70,8 @@ TimeSource getCurrentTimeSource();
 /**
  * @brief Check if GPS has valid time lock
  *
- * Returns false in baseline implementation, will check GPS status in M3L-79.
+ * Returns true when GPS has acquired satellite lock and time is valid.
+ * Requires fix type 2-5 (2D/3D/GNSS+DR/time-only) and 3+ satellites.
  *
  * @return true if GPS time is valid, false otherwise
  */
