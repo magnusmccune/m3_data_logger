@@ -62,6 +62,7 @@
 // I2C Device Addresses (Qwiic peripherals)
 #define ADDR_QWIIC_BUTTON    0x6F // SparkFun Qwiic Button - Red LED
 #define ADDR_QR_READER       0x0C // Tiny Code Reader (QR scanner)
+#define ADDR_GPS             0x42 // SparkFun SAM-M8Q GPS (ublox)
 
 // Button Interrupt Pin
 #define BUTTON_INT_PIN       33   // Interrupt-capable GPIO for button press detection
@@ -149,13 +150,34 @@ bool initializeQwiicButton();
  */
 bool initializeQRReader();
 
+/**
+ * @brief Initialize GPS module (SAM-M8Q)
+ *
+ * Configures the SparkFun SAM-M8Q GPS at I2C address 0x42 for time synchronization.
+ * This function MUST be called after initializeI2C().
+ *
+ * Cold start: 30+ seconds to acquire satellite lock
+ * Warm start: 5-10 seconds with valid almanac data
+ * Indoor: May not achieve lock, millis() fallback used automatically
+ *
+ * @return true if GPS initialized successfully, false otherwise
+ */
+bool initializeGPS();
+
 // ===== External Object Declarations =====
 
 // Forward declare QwiicButton class to avoid including full header
 class QwiicButton;
 
+// Forward declare SFE_UBLOX_GNSS class to avoid including full header
+class SFE_UBLOX_GNSS;
+
 // Global button object (defined in hardware_init.cpp)
 // Accessible from main.cpp for interrupt handling
 extern QwiicButton button;
+
+// Global GPS object (defined in hardware_init.cpp)
+// Accessible from time_manager.cpp for time synchronization
+extern SFE_UBLOX_GNSS gps;
 
 #endif // HARDWARE_INIT_H

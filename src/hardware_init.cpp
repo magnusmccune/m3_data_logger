@@ -16,10 +16,12 @@
 #include <SD_MMC.h>
 #include <Wire.h>
 #include <SparkFun_Qwiic_Button.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <tiny_code_reader.h>
 
 // ===== Global Objects =====
-QwiicButton button;  // Global button object accessible from main.cpp
+QwiicButton button;      // Global button object accessible from main.cpp
+SFE_UBLOX_GNSS gps;      // Global GPS object accessible from time_manager.cpp
 
 // ===== Timing Constants =====
 constexpr uint32_t SD_STABILIZATION_DELAY_MS = 10;  // Level shifter stabilization time
@@ -133,6 +135,9 @@ uint8_t scanI2CBus() {
             switch (address) {
                 case 0x36:
                     Serial.print(" (MAX17048 Fuel Gauge)");
+                    break;
+                case 0x42:
+                    Serial.print(" (SAM-M8Q GPS)");
                     break;
                 case 0x6A:
                 case 0x6B:
@@ -311,5 +316,75 @@ bool initializeQRReader() {
 
     Serial.println("✓ QR Reader ready for scanning");
     Serial.println("==== QR Reader Initialization Complete ====\n");
+    return true;
+}
+
+// ===== GPS Initialization (M3L-79) =====
+
+bool initializeGPS() {
+    Serial.println("\n==== GPS Initialization ====");
+
+    // Initialize GPS on I2C bus at address 0x42
+    if (!gps.begin(Wire, ADDR_GPS)) {
+        Serial.println("✗ ERROR: GPS not detected at 0x42");
+        Serial.println("  Check Qwiic cable connection");
+        Serial.println("  GPS time sync will not be available (millis fallback active)");
+        return false;
+    }
+    Serial.println("✓ GPS detected at 0x42");
+
+    // Configure GPS for optimal time synchronization
+    // Set I2C output for UBX protocol (binary protocol for faster parsing)
+    gps.setI2COutput(COM_TYPE_UBX);
+    Serial.println("✓ GPS I2C output set to UBX protocol");
+
+    // Enable automatic NAV PVT messages (Position/Velocity/Time)
+    // This provides time, fix status, and satellite count
+    gps.setAutoPVT(true);
+    Serial.println("✓ Auto PVT messages enabled");
+
+    // Set navigation rate to 1Hz (once per second) - sufficient for time sync
+    gps.setNavigationFrequency(1);
+    Serial.println("✓ Navigation frequency set to 1Hz");
+
+    // Print GPS module info
+    if (gps.getProtocolVersionHigh() > 0) {
+        Serial.print("  GPS Protocol Version: ");
+        Serial.print(gps.getProtocolVersionHigh());
+        Serial.print(".");
+        Serial.println(gps.getProtocolVersionLow());
+    }
+
+    // Check current fix status
+    uint8_t fixType = gps.getFixType();
+    uint8_t satellites = gps.getSIV();  // Satellites In View
+
+    Serial.print("  Fix Type: ");
+    switch (fixType) {
+        case 0: Serial.println("No fix"); break;
+        case 1: Serial.println("Dead reckoning"); break;
+        case 2: Serial.println("2D fix"); break;
+        case 3: Serial.println("3D fix"); break;
+        case 4: Serial.println("GNSS + dead reckoning"); break;
+        case 5: Serial.println("Time-only fix"); break;
+        default: Serial.println("Unknown");
+    }
+
+    Serial.print("  Satellites in view: ");
+    Serial.println(satellites);
+
+    if (fixType == 0 || fixType == 1) {
+        Serial.println("⚠ WARNING: No GPS lock yet");
+        Serial.println("  Cold start: 30+ seconds to acquire satellites");
+        Serial.println("  Warm start: 5-10 seconds with valid almanac");
+        Serial.println("  Indoor: Lock may not be achievable");
+        Serial.println("  Time manager will use millis() fallback until lock acquired");
+    } else {
+        Serial.println("✓ GPS has valid fix - time sync available");
+    }
+
+    Serial.print("  Power consumption: ~30mA continuous");
+    Serial.println("\n✓ GPS initialization complete");
+    Serial.println("==== GPS Initialization Complete ====\n");
     return true;
 }
