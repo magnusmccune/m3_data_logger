@@ -85,7 +85,8 @@ void updateTime() {
             uint32_t nanosecond = gps.getNanosecond();
 
             // Convert to Unix epoch milliseconds
-            // GPS time is UTC, which aligns with Unix epoch
+            // Note: GPS time has diverged from UTC by leap seconds (18 as of 2024)
+            // GPS module reports UTC time already corrected, so no adjustment needed
             lastGPSTime = convertToUnixEpochMs(year, month, day, hour, minute, second, nanosecond);
             lastGPSUpdate = millis();
 
@@ -168,7 +169,23 @@ uint64_t getTimestampMs() {
     if (currentSource == TIME_SOURCE_GPS && gpsLocked) {
         // Return GPS time adjusted for elapsed millis() since last GPS update
         // This provides accurate timestamps even between GPS updates (1Hz)
-        uint32_t elapsed = millis() - lastGPSUpdate;
+        uint32_t currentMillis = millis();
+        uint32_t elapsed;
+
+        // Handle millis() rollover (occurs every ~49.7 days)
+        if (currentMillis >= lastGPSUpdate) {
+            elapsed = currentMillis - lastGPSUpdate;
+        } else {
+            // Rollover occurred: calculate wrapped elapsed time
+            elapsed = (0xFFFFFFFF - lastGPSUpdate) + currentMillis + 1;
+        }
+
+        // Sanity check: if elapsed > 60 seconds, GPS likely stale - fallback to millis()
+        if (elapsed > 60000) {
+            Serial.println("[TIME] Warning: GPS data stale (>60s), using millis() fallback");
+            return (uint64_t)millis();
+        }
+
         return lastGPSTime + (uint64_t)elapsed;
     } else {
         // Fallback to millis() for relative timing
