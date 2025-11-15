@@ -18,10 +18,12 @@
 #include <SparkFun_Qwiic_Button.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <tiny_code_reader.h>
+#include <Adafruit_NeoPixel.h>
 
 // ===== Global Objects =====
 QwiicButton button;      // Global button object accessible from main.cpp
 SFE_UBLOX_GNSS gps;      // Global GPS object accessible from time_manager.cpp
+Adafruit_NeoPixel rgbLED(1, LED_RGB, NEO_GRB + NEO_KHZ800);  // RGB LED on GPIO26 (1 pixel)
 
 // ===== Timing Constants =====
 constexpr uint32_t SD_STABILIZATION_DELAY_MS = 10;  // Level shifter stabilization time
@@ -157,17 +159,39 @@ uint8_t scanI2CBus() {
     return deviceCount;
 }
 
-// ===== Status LED =====
+// ===== RGB LED (NeoPixel) =====
+
+/**
+ * @brief Initialize RGB LED (NeoPixel) on GPIO26
+ *
+ * Configures the onboard NeoPixel for dual-channel indication:
+ * - Color: GPS status (green=locked, yellow=acquiring, blue=millis fallback, red=error)
+ * - Pattern: State machine (breathing=IDLE, slow blink=AWAITING_QR, solid=RECORDING, fast blink=ERROR)
+ *
+ * @return true if RGB LED initialized successfully
+ */
+bool initializeRGBLED() {
+    Serial.println("\n==== RGB LED Initialization ====");
+
+    rgbLED.begin();           // Initialize NeoPixel library
+    rgbLED.setBrightness(10); // Start with IDLE brightness (4%)
+    rgbLED.setPixelColor(0, rgbLED.Color(0, 0, 0));  // OFF
+    rgbLED.show();            // Apply color
+
+    Serial.println("✓ RGB LED initialized (GPIO26)");
+    Serial.println("  Dual-channel indication:");
+    Serial.println("  - Color: GPS status (green/yellow/blue/red)");
+    Serial.println("  - Pattern: State machine (breathing/blink/solid/fast)");
+    Serial.println("==== RGB LED Initialization Complete ====\n");
+
+    return true;
+}
 
 void initializeStatusLED() {
+    // Deprecated: Using RGB LED on GPIO26 instead
+    // Keep GPIO25 status LED off to prevent conflicts
     pinMode(LED_STATUS, OUTPUT);
     digitalWrite(LED_STATUS, LOW);
-    Serial.println("✓ Status LED initialized (GPIO25)");
-
-    // Initialize RGB LED (GPIO26) to OFF to prevent floating HIGH
-    pinMode(LED_RGB, OUTPUT);
-    digitalWrite(LED_RGB, LOW);
-    Serial.println("✓ RGB LED initialized to OFF (GPIO26)");
 }
 
 // ===== Battery Monitoring (MAX17048 Fuel Gauge) =====

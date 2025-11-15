@@ -99,9 +99,21 @@ bool initializeI2C(bool scanBus = true);
 uint8_t scanI2CBus();
 
 /**
- * @brief Initialize status LED
+ * @brief Initialize RGB LED (NeoPixel)
  *
- * Sets up GPIO25 as output for status indication.
+ * Sets up GPIO26 NeoPixel for dual-channel indication:
+ * - Color: GPS status (green/yellow/blue/red)
+ * - Pattern: State machine (breathing/blink/solid/fast)
+ *
+ * @return true if RGB LED initialized successfully
+ */
+bool initializeRGBLED();
+
+/**
+ * @brief Initialize status LED (deprecated)
+ *
+ * Kept for compatibility, sets GPIO25 to LOW.
+ * Use initializeRGBLED() instead for RGB LED on GPIO26.
  */
 void initializeStatusLED();
 
@@ -172,6 +184,9 @@ class QwiicButton;
 // Forward declare SFE_UBLOX_GNSS class to avoid including full header
 class SFE_UBLOX_GNSS;
 
+// Forward declare Adafruit_NeoPixel class to avoid including full header
+class Adafruit_NeoPixel;
+
 // Global button object (defined in hardware_init.cpp)
 // Accessible from main.cpp for interrupt handling
 extern QwiicButton button;
@@ -179,5 +194,9 @@ extern QwiicButton button;
 // Global GPS object (defined in hardware_init.cpp)
 // Accessible from time_manager.cpp for time synchronization
 extern SFE_UBLOX_GNSS gps;
+
+// Global RGB LED object (defined in hardware_init.cpp)
+// Accessible from main.cpp for dual-channel indication (GPS status + state machine)
+extern Adafruit_NeoPixel rgbLED;
 
 #endif // HARDWARE_INIT_H
