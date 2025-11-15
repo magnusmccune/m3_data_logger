@@ -7,6 +7,7 @@
  */
 
 #include "storage_manager.h"
+#include "time_manager.h"
 #include <SD_MMC.h>
 #include <time.h>
 #include <ArduinoJson.h>
@@ -111,14 +112,21 @@ bool startSession(const char* testID, const char* description, const char* label
     // Initialize session state
     sessionActive = true;
     sessionStartTime = millis();
-    sessionStartTimestamp = millis();  // Could use RTC if available
+    sessionStartTimestamp = getTimestampMs();  // GPS or millis() fallback
     lastFsyncTime = millis();
     samplesWritten = 0;
     bufferCount = 0;
 
+    // Log time source status
+    TimeSource timeSource = getCurrentTimeSource();
+    bool gpsLocked = isGPSLocked();
+    const char* sourceStr = (timeSource == TIME_SOURCE_GPS) ? "GPS" : "millis";
+
     Serial.printf("[Storage] Session started: %s\n", currentSessionID);
     Serial.printf("[Storage] Test ID: %s\n", currentTestID);
     Serial.printf("[Storage] File: %s\n", currentFilename);
+    Serial.printf("[Storage] Time source: %s (GPS locked: %s)\n",
+                  sourceStr, gpsLocked ? "true" : "false");
 
     return true;
 }
@@ -247,13 +255,13 @@ static bool flushBuffer() {
     for (uint8_t i = 0; i < bufferCount; i++) {
         const IMUSample& sample = writeBuffer[i];
 
-        // Calculate relative timestamp from session start
-        uint32_t relativeTime = sample.timestamp_ms - sessionStartTimestamp;
+        // Get GPS timestamp (Unix epoch ms) or millis() fallback
+        uint64_t timestamp = getTimestampMs();
 
         // Write CSV row: test_id,timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
-        int written = sessionFile.printf("%s,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+        int written = sessionFile.printf("%s,%llu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
                                           currentTestID,
-                                          relativeTime,
+                                          timestamp,
                                           sample.accel_x, sample.accel_y, sample.accel_z,
                                           sample.gyro_x, sample.gyro_y, sample.gyro_z);
 
@@ -346,14 +354,22 @@ static bool writeMetadataEntry(uint32_t sessionDuration, float avgRate) {
         labels.add(currentLabels[i]);
     }
 
-    // TODO: Use ISO 8601 timestamp when NTP/RTC available
-    // For now, using millis() as placeholder
-    session["start_time"] = sessionStartTimestamp;
-    session["end_time"] = millis();
+    // Add timestamps and time source info
+    TimeSource timeSource = getCurrentTimeSource();
+    bool gpsLocked = isGPSLocked();
+
+    // Use ISO 8601 format for start_time when available
+    String startTimeISO = getTimestampISO();
+    session["start_time"] = startTimeISO;
+
     session["duration_ms"] = sessionDuration;
     session["samples"] = samplesWritten;
     session["actual_rate_hz"] = avgRate;
     session["filename"] = currentFilename;
+
+    // Add time source metadata (M3L-81)
+    session["time_source"] = (timeSource == TIME_SOURCE_GPS) ? "gps" : "millis";
+    session["gps_locked"] = gpsLocked;
 
     // Write updated metadata back to file
     metaFile = SD_MMC.open(metadataPath, FILE_WRITE);
