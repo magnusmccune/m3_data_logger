@@ -68,14 +68,18 @@ m3_data_logger/
 
 ## Workflow Overview
 
-1. **Press Button** → RGB LED blinks yellow (awaiting QR scan, 30s timeout)
+1. **Press Button** → RGB LED blinks (awaiting QR scan, 30s timeout)
 2. **Scan QR Code** → Captures metadata (test_id, description, labels)
-3. **Recording Starts** → LED solid green/blue, IMU data logged to microSD at 100Hz
+3. **Recording Starts** → LED solid, IMU data logged to microSD at 100Hz with GPS timestamps
 4. **Press Button** → Recording stops, LED returns to breathing pattern
 
+**RGB LED Status** (dual-channel indication):
+- Color: Green=GPS locked, Yellow=GPS acquiring, Blue=millis fallback, Red=error
+- Pattern: Breathing=IDLE, Blinking=AWAITING_QR, Solid=RECORDING
+
 **Data Formats**:
-- CSV: `/data/session_YYYYMMDD_HHMMSS.csv` with timestamp, lat/lon, accel_xyz, gyro_xyz
-- Metadata: `/data/metadata.json` with session info, test_id mapping, time source
+- CSV: `/data/session_YYYYMMDD_HHMMSS.csv` with GPS timestamps (Unix epoch ms), lat/lon, accel_xyz, gyro_xyz
+- Metadata: `/data/metadata.json` with session info, test_id mapping, time source (GPS or millis)
 
 ## QR Code Generation
 
@@ -111,28 +115,25 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
 
 ## Development Status
 
-**Current Phase**: NOW - Core Data Logging & GPS Time Sync
+**Current Phase**: NEXT - Enhanced Features
 
 **Completed**:
-- [x] Project initialization and hardware setup
-- [x] State machine implementation (M3L-57)
-- [x] Button interrupt handler (M3L-58)
-- [x] QR code scanner integration (M3L-60)
-- [x] IMU sensor integration at 100Hz (M3L-61)
-- [x] MicroSD storage with CSV format (M3L-63)
+- [x] Core data logging: State machine, button handler, QR scanner, IMU (100Hz), SD storage
 - [x] Session management with metadata.json (M3L-64)
 - [x] QR Generator CLI + REST API + Docker (M3L-66/67)
-- [x] ESP32 I2C fix for Tiny Code Reader
+- [x] ESP32 I2C fix for Tiny Code Reader (M3L-66)
+- [x] GPS time synchronization (M3L-77 Epic - 10 commits, +675/-94 lines)
+  - [x] time_manager module with GPS/millis fallback (M3L-78)
+  - [x] GPS integration (SAM-M8Q at I2C 0x42) (M3L-79)
+  - [x] Dual-channel RGB LED status indication (M3L-80)
+  - [x] CSV timestamps with Unix epoch ms (M3L-81)
 
-**In Progress**:
-- [ ] GPS time synchronization (M3L-77 Epic)
-  - [ ] time_manager module (M3L-78)
-  - [ ] GPS integration (M3L-79)
-  - [ ] RGB LED dual-channel status (M3L-80)
-  - [ ] CSV timestamps with GPS (M3L-81)
-  - [ ] GPS location logging (M3L-82)
+**Next Up**:
+- [ ] GPS location logging (lat/lon in CSV) (M3L-82)
+- [ ] Battery optimization (deep sleep between recordings)
+- [ ] MQTT transmission (WiFi data upload)
 
-**Build Stats**: 7.8% RAM, 32.1% Flash, 302KB free heap
+**Build Stats**: 8.0% RAM (26KB), 38.0% Flash (498KB), 302KB free heap
 
 See Linear project: [M3-Data-Logger](https://linear.app/m3labs/project/m3-data-logger-d5a8ffada01d)
 
