@@ -293,10 +293,12 @@ bool getGPSLocation(float& lat, float& lon) {
     // typical movement in 1 second.
     gps.getPVT();
     
-    // Check if GPS has valid fix (type 2 = 2D fix, type 3 = 3D fix)
+    // Fix types: 0=none, 1=dead reckoning only, 2=2D, 3=3D, 4=GNSS+DR, 5=time-only
+    // Accept 2D, 3D, and GNSS+DR (type 4) for valid location data
+    // Exclude type 5 (time-only fix provides valid time but NO position data)
     uint8_t fixType = gps.getFixType();
     
-    if (fixType >= 2 && fixType <= 3) {
+    if (fixType >= 2 && fixType <= 4) {
         // Get lat/lon from GPS (in 1e-7 degrees)
         int32_t rawLat = gps.getLatitude();
         int32_t rawLon = gps.getLongitude();
