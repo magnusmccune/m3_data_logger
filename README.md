@@ -47,8 +47,11 @@ Expected serial output shows:
 - Free heap ~302KB
 - IMU initialization with test readings
 - GPS status (acquiring/locked)
+- Battery voltage and state of charge
 
 **Troubleshooting**: If "Invalid head of packet" error, hold BOOT button during upload or reduce upload_speed to 115200 in platformio.ini.
+
+**Important**: Device enters deep sleep when IDLE to save battery. To wake the device, press the hardware RESET button (not the Qwiic button). The Qwiic button is only for starting/stopping recordings once the device is awake.
 
 ## Project Structure
 
@@ -78,11 +81,12 @@ m3_data_logger/
 - Color: Green=GPS locked, Yellow=GPS acquiring, Blue=millis fallback, Red=error
 - Pattern: Breathing=IDLE, Blinking=AWAITING_QR, Solid=RECORDING
 
-**Power Management** (M3L-83):
-- IDLE: Device enters deep sleep after 5 seconds to save battery
-- Wake: Press button to wake and start QR scan (instant response)
-- Battery Life: ~21+ days on 2000mAh LiPo (95% idle, 5% recording)
-- Battery Status: Logged every 30 seconds, included in session metadata
+**Power Management** (M3L-83 - Completed):
+- Deep Sleep: Device enters deep sleep when IDLE to save battery (<1mA consumption)
+- Wake: Press hardware RESET button to wake (timer wakeup with I2C polling, no GPIO interrupt)
+- Battery Life: ~117 days on 2000mAh LiPo (2024-03-12 projected depletion from 2024-11-15)
+- Battery Monitoring: MAX17048 fuel gauge tracks voltage, SOC%, low battery alerts
+- Session Tracking: Start/end battery levels logged in metadata.json
 
 **Data Formats**:
 - CSV: `/data/session_YYYYMMDD_HHMMSS.csv` with GPS timestamps (Unix epoch ms), lat/lon, accel_xyz, gyro_xyz
@@ -135,11 +139,16 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
   - [x] Dual-channel RGB LED status indication (M3L-80)
   - [x] CSV timestamps with Unix epoch ms (M3L-81)
 - [x] GPS location logging (lat/lon in CSV with 1Hz caching) (M3L-82)
+- [x] Battery optimization and deep sleep (M3L-83)
+  - [x] MAX17048 fuel gauge integration for battery monitoring
+  - [x] Deep sleep implementation with timer wakeup (hardware RESET wake)
+  - [x] Battery start/end tracking in session metadata
+  - [x] Power manager with low battery detection
 
 **Next Up**:
-- [ ] Battery optimization (deep sleep between recordings) (M3L-83)
 - [ ] MQTT transmission (WiFi data upload)
 - [ ] NTP time sync for indoor use
+- [ ] Cloud storage integration
 
 **Build Stats**: 8.0% RAM (26KB), 38.0% Flash (498KB), 302KB free heap
 
