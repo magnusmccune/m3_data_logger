@@ -26,6 +26,7 @@
 #include "sensor_manager.h"         // For IMU data collection (M3L-61)
 #include "storage_manager.h"        // For SD card CSV logging (M3L-63)
 #include "time_manager.h"           // For GPS time sync and status (M3L-79)
+#include "network_manager.h"        // For WiFi and MQTT configuration (M3L-71)
 #include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
@@ -865,6 +866,22 @@ void setup() {
     Serial.println("✓ Time manager initialized");
     Serial.println();
 
+    // Initialize network manager (M3L-71)
+    if (!initializeNetworkManager()) {
+        Serial.println("⚠ WARNING: Network manager initialization failed");
+        Serial.println("   WiFi and MQTT functionality disabled");
+    } else {
+        // Attempt WiFi auto-connect with 5s timeout (non-blocking)
+        Serial.println("[Network] Attempting WiFi auto-connect...");
+        if (connectWiFi()) {
+            Serial.println("✓ WiFi connected successfully");
+        } else {
+            Serial.println("⚠ WiFi connection failed or not configured");
+            Serial.println("   Continuing in offline mode (SD-only recording)");
+        }
+    }
+    Serial.println();
+
     Serial.println("╔════════════════════════════════════════╗");
     Serial.println("║   Initialization Complete - Ready      ║");
     Serial.println("╚════════════════════════════════════════╝");
@@ -891,6 +908,25 @@ void setup() {
 }
 
 void loop() {
+    // Handle serial commands (non-blocking) - M3L-71
+    if (Serial.available() > 0) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+        
+        if (command.length() > 0) {
+            // Check if it's a network config command
+            if (command.startsWith("config ")) {
+                handleNetworkCommand(command);
+            } else {
+                Serial.printf("[Main] Unknown command: %s\n", command.c_str());
+                Serial.println("[Main] Available commands:");
+                Serial.println("  config show - Display network configuration");
+                Serial.println("  config set <field> <value> - Update configuration");
+                Serial.println("  config reset - Reset to factory defaults");
+            }
+        }
+    }
+
     // Update time manager (GPS polling for M3L-79)
     updateTime();
 
@@ -937,7 +973,7 @@ void loop() {
     if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
         lastHeartbeat = now;
 
-        Serial.print("♥ Heartbeat: ");
+        Serial.print("\u2665 Heartbeat: ");
         Serial.print(now / 1000);
         Serial.print("s uptime | Free Heap: ");
         Serial.print(ESP.getFreeHeap());
