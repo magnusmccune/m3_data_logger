@@ -169,6 +169,144 @@
         "description": "Test validation: maximum 10 labels allowed"
       },
       "response": []
+    },
+    {
+      "name": "Generate Config QR (Basic WiFi)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Generate device configuration QR code with WiFi and MQTT settings (basic - no MQTT auth)"
+      },
+      "response": []
+    },
+    {
+      "name": "Generate Config QR (Full with MQTT Auth)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"mqtt_username\": \"device123\",\n  \"mqtt_password\": \"mqttSecret456\",\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Generate device configuration QR code with full MQTT authentication"
+      },
+      "response": []
+    },
+    {
+      "name": "Config Error: Invalid SSID (Too Long)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"ThisSSIDIsTooLongAndExceeds32Characters\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Test validation: SSID must be 1-32 characters"
+      },
+      "response": []
+    },
+    {
+      "name": "Config Error: Weak Password",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"short\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Test validation: WiFi password must be at least 8 characters"
+      },
+      "response": []
+    },
+    {
+      "name": "Config Error: Invalid MQTT Port",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 99999,\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Test validation: MQTT port must be 1-65535"
+      },
+      "response": []
+    },
+    {
+      "name": "Config Error: Invalid MQTT Host",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"invalid host with spaces\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/generate/config",
+          "host": ["{{base_url}}"],
+          "path": ["generate", "config"]
+        },
+        "description": "Test validation: MQTT host must be valid DNS name or IP address"
+      },
+      "response": []
     }
   ],
   "variable": [
