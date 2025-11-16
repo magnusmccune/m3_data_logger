@@ -17,13 +17,15 @@
 // IMU sample structure
 struct IMUSample {
     uint32_t timestamp_ms;      // Timestamp when sample was read
+    float lat;                  // Latitude (decimal degrees, 0.0 if no GPS fix)
+    float lon;                  // Longitude (decimal degrees, 0.0 if no GPS fix)
     float accel_x;              // Acceleration X-axis (g)
     float accel_y;              // Acceleration Y-axis (g)
     float accel_z;              // Acceleration Z-axis (g)
     float gyro_x;               // Gyroscope X-axis (degrees/sec)
     float gyro_y;               // Gyroscope Y-axis (degrees/sec)
     float gyro_z;               // Gyroscope Z-axis (degrees/sec)
-};
+};;
 
 // Sensor configuration constants
 constexpr uint16_t SAMPLE_RATE_HZ = 100;            // Target sampling rate
