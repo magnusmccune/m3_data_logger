@@ -8,6 +8,7 @@
 
 #include "storage_manager.h"
 #include "time_manager.h"
+#include "battery_manager.h"
 #include <SD_MMC.h>
 #include <time.h>
 #include <ArduinoJson.h>
@@ -371,6 +372,17 @@ static bool writeMetadataEntry(uint32_t sessionDuration, float avgRate) {
     // Add time source metadata (M3L-81)
     session["time_source"] = (timeSource == TIME_SOURCE_GPS) ? "gps" : "millis";
     session["gps_locked"] = gpsLocked;
+
+    // Add battery data (M3L-83)
+    float batteryVoltage = getBatteryVoltage();
+    float batteryPercentage = getBatteryPercentage();
+    if (batteryVoltage > 0 && batteryPercentage >= 0) {
+        JsonObject battery = session.createNestedObject("battery");
+        battery["voltage"] = serialized(String(batteryVoltage, 2));  // 2 decimal places
+        battery["percentage"] = serialized(String(batteryPercentage, 1));  // 1 decimal place
+        battery["low"] = isBatteryLow();
+        battery["critical"] = isBatteryCritical();
+    }
 
     // Write updated metadata back to file
     metaFile = SD_MMC.open(metadataPath, FILE_WRITE);
