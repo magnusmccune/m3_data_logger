@@ -23,9 +23,11 @@
 #include "hardware_init.h"
 #include "sensor_manager.h"         // For IMU data collection (M3L-61)
 #include "storage_manager.h"        // For SD card CSV logging (M3L-63)
+#include "time_manager.h"           // For GPS time sync and status (M3L-79)
 #include <SparkFun_Qwiic_Button.h>  // For button object methods in state handlers
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
+#include <Adafruit_NeoPixel.h>      // For RGB LED control (M3L-80)
 
 // Firmware version
 #define FW_VERSION "0.2.0-dev"
@@ -44,15 +46,28 @@ SystemState currentState = SystemState::IDLE;
 // State machine timing constants
 constexpr uint32_t QR_SCAN_TIMEOUT_MS = 30000;        // 30 seconds for QR code scan
 constexpr uint32_t ERROR_RECOVERY_TIMEOUT_MS = 60000; // 60 seconds before auto-recovery
-constexpr uint32_t LED_BLINK_SLOW_MS = 500;           // 1Hz blink (500ms on, 500ms off)
-constexpr uint32_t LED_BLINK_FAST_MS = 100;           // 5Hz blink (100ms on, 100ms off)
+constexpr uint32_t LED_BLINK_SLOW_MS = 1000;          // 0.5Hz blink (1s on, 1s off) for AWAITING_QR
+constexpr uint32_t LED_BLINK_FAST_MS = 100;           // 5Hz blink (100ms on, 100ms off) for ERROR
+constexpr uint32_t LED_BREATHING_MS = 3000;           // 3s breathing cycle for IDLE
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 5000;      // 5 seconds
 constexpr uint32_t SETUP_LED_BLINK_MS = 200;          // Boot LED blink duration
+
+// RGB LED brightness levels
+constexpr uint8_t LED_BRIGHTNESS_IDLE = 10;       // 4% brightness for IDLE (breathing)
+constexpr uint8_t LED_BRIGHTNESS_INDOOR = 25;     // 10% brightness for AWAITING_QR/RECORDING
+constexpr uint8_t LED_BRIGHTNESS_OUTDOOR = 100;   // 40% brightness for ERROR (high visibility)
+
+// RGB LED colors (GPS status)
+constexpr uint32_t COLOR_GPS_LOCKED = 0x00FF00;   // Green: GPS locked (accurate time)
+constexpr uint32_t COLOR_GPS_ACQUIRING = 0xFFAA00; // Yellow: GPS acquiring (searching)
+constexpr uint32_t COLOR_GPS_MILLIS = 0x0080FF;   // Blue: No GPS (millis fallback)
+constexpr uint32_t COLOR_ERROR = 0xFF0000;        // Red: ERROR state (overrides GPS)
 
 // State timing tracking
 uint32_t stateEntryTime = 0;      // Timestamp when current state was entered
 uint32_t lastLEDToggle = 0;       // Last LED toggle for blink patterns
 bool ledState = false;             // Current LED state for blinking
+uint32_t lastGPSColor = 0;        // Last GPS color for smooth transitions
 
 // Button interrupt handling
 volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
@@ -103,55 +118,121 @@ const char* stateToString(SystemState state) {
 }
 
 /**
- * @brief Update LED pattern based on current state
+ * @brief Get GPS status color for RGB LED
  *
- * Non-blocking LED control:
- * - IDLE: LED OFF
- * - AWAITING_QR: Slow blink (1Hz)
- * - RECORDING: Solid ON
- * - ERROR: Fast blink (5Hz)
+ * Determines LED color based on GPS lock status and time source:
+ * - Green: GPS locked (accurate UTC time)
+ * - Yellow: GPS acquiring (searching for satellites)
+ * - Blue: No GPS (millis fallback)
+ * - Red: ERROR state (overrides GPS status)
+ *
+ * @return 24-bit RGB color value
+ */
+uint32_t getGPSColor() {
+    // ERROR state always shows red (highest priority)
+    if (currentState == SystemState::ERROR) {
+        return COLOR_ERROR;
+    }
+
+    // Check GPS lock status
+    if (isGPSLocked()) {
+        return COLOR_GPS_LOCKED;  // Green: GPS has valid lock
+    }
+
+    // Check time source to distinguish acquiring vs. no GPS
+    TimeSource source = getCurrentTimeSource();
+    if (source == TIME_SOURCE_GPS) {
+        // GPS initialized but not locked yet
+        return COLOR_GPS_ACQUIRING;  // Yellow: GPS acquiring satellites
+    } else {
+        // Using millis() fallback (GPS not available or not locked)
+        return COLOR_GPS_MILLIS;  // Blue: millis fallback
+    }
+}
+
+/**
+ * @brief Apply state machine pattern to RGB LED
+ *
+ * Dual-channel indication:
+ * - Color: GPS status (from getGPSColor())
+ * - Pattern: State machine
+ *   - IDLE: Breathing (3s cycle, 4% max brightness)
+ *   - AWAITING_QR: Slow blink (0.5Hz, 10% brightness)
+ *   - RECORDING: Solid ON (10% brightness)
+ *   - ERROR: Fast blink (5Hz, 40% brightness, red)
+ *
+ * Non-blocking implementation using millis() timing.
  */
 void updateLEDPattern() {
     uint32_t now = millis();
+    uint32_t color = getGPSColor();
+
+    // Smooth color transitions (fade over 100ms)
+    if (color != lastGPSColor) {
+        lastGPSColor = color;
+        // Immediate color change for simplicity (smooth fade is complex)
+    }
 
     switch (currentState) {
-        case SystemState::IDLE:
-            // LED OFF
-            button.LEDoff();
-            ledState = false;
-            break;
+        case SystemState::IDLE: {
+            // Breathing pattern (3s cycle)
+            rgbLED.setBrightness(LED_BRIGHTNESS_IDLE);
 
-        case SystemState::AWAITING_QR:
-            // Slow blink (1Hz) - 500ms on, 500ms off
+            // Calculate breathing brightness (sine wave approximation)
+            uint32_t phase = now % LED_BREATHING_MS;
+            float breathe = 0.5f + 0.5f * sin(2.0f * PI * phase / LED_BREATHING_MS);
+            uint8_t brightness = (uint8_t)(LED_BRIGHTNESS_IDLE * breathe);
+
+            rgbLED.setBrightness(brightness);
+            rgbLED.setPixelColor(0, color);
+            rgbLED.show();
+            break;
+        }
+
+        case SystemState::AWAITING_QR: {
+            // Slow blink (0.5Hz) - 1s on, 1s off
+            rgbLED.setBrightness(LED_BRIGHTNESS_INDOOR);
+
             if (now - lastLEDToggle >= LED_BLINK_SLOW_MS) {
                 ledState = !ledState;
-                if (ledState) {
-                    button.LEDon(255);  // Full brightness when on
-                } else {
-                    button.LEDoff();
-                }
                 lastLEDToggle = now;
             }
-            break;
 
-        case SystemState::RECORDING:
+            if (ledState) {
+                rgbLED.setPixelColor(0, color);
+            } else {
+                rgbLED.setPixelColor(0, 0);  // OFF
+            }
+            rgbLED.show();
+            break;
+        }
+
+        case SystemState::RECORDING: {
             // Solid ON - full brightness
-            button.LEDon(255);
+            rgbLED.setBrightness(LED_BRIGHTNESS_INDOOR);
+            rgbLED.setPixelColor(0, color);
+            rgbLED.show();
             ledState = true;
             break;
+        }
 
-        case SystemState::ERROR:
+        case SystemState::ERROR: {
             // Fast blink (5Hz) - 100ms on, 100ms off
+            rgbLED.setBrightness(LED_BRIGHTNESS_OUTDOOR);  // High visibility
+
             if (now - lastLEDToggle >= LED_BLINK_FAST_MS) {
                 ledState = !ledState;
-                if (ledState) {
-                    button.LEDon(255);  // Full brightness when on
-                } else {
-                    button.LEDoff();
-                }
                 lastLEDToggle = now;
             }
+
+            if (ledState) {
+                rgbLED.setPixelColor(0, COLOR_ERROR);  // Always red in ERROR
+            } else {
+                rgbLED.setPixelColor(0, 0);  // OFF
+            }
+            rgbLED.show();
             break;
+        }
     }
 }
 
@@ -435,22 +516,7 @@ bool scanQRCode() {
     return false;
 }
 
-/**
- * @brief Blocking LED blink pattern for QR feedback
- * @param count Number of blinks (3=success, 5=failure)
- * 
- * NOTE: This is a blocking function (uses delay). Only call in state transitions,
- *       not during active state handling. The blink is fast (100ms on/off) to minimize
- *       blocking time.
- */
-void blinkButtonLED(uint8_t count) {
-    for (uint8_t i = 0; i < count; i++) {
-        button.LEDon(255);  // Full brightness
-        delay(100);
-        button.LEDoff();
-        delay(100);
-    }
-}
+// blinkButtonLED removed - RGB LED handles all visual feedback (M3L-80)
 
 // ===== State Handler Functions =====
 
@@ -477,16 +543,12 @@ void handleIdleState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-            
-            // Visual confirmation: blink LED briefly
-            button.LEDon(255);  // Full brightness
-            delay(100);  // Blocking OK for user feedback (100ms is acceptable)
-            button.LEDoff();
 
             // Clear interrupt flags to prevent repeat triggers
             button.clearEventBits();
 
             // Transition to AWAITING_QR state
+            // RGB LED will show new state pattern automatically via updateLEDPattern()
             transitionState(SystemState::AWAITING_QR, "button pressed");
         } else {
             buttonPressed = false;  // Clear spurious interrupt
@@ -522,15 +584,10 @@ void handleAwaitingQRState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-            
-            // Visual confirmation: blink LED
-            button.LEDon(255);
-            delay(100);
-            button.LEDoff();
-            
+
             // Clear interrupt flags
             button.clearEventBits();
-            
+
             transitionState(SystemState::IDLE, "QR scan cancelled via button");
             return;
         } else {
@@ -551,8 +608,7 @@ void handleAwaitingQRState() {
         
         if (scanQRCode()) {
             // SUCCESS: Valid QR code with metadata parsed
-            // Visual feedback: 3 fast blinks
-            blinkButtonLED(3);
+            // RGB LED will show RECORDING state pattern automatically
 
             // Start data logging session (M3L-64)
             // Convert char array to const char* array for storage manager
@@ -603,10 +659,6 @@ void handleRecordingState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-
-            // Visual confirmation: quick non-blocking blink
-            button.LEDon(255);
-            // Don't delay - LED will turn off on next state's updateLEDPattern()
 
             // Clear interrupt flags
             button.clearEventBits();
@@ -678,11 +730,6 @@ void handleErrorState() {
         if (button.hasBeenClicked()) {
             buttonPressed = false;  // Clear flag AFTER successful I2C verification
             lastButtonPressTime = currentTime;
-            
-            // Visual confirmation: blink LED briefly
-            button.LEDon(255);  // Full brightness
-            delay(100);  // Blocking OK for user feedback
-            button.LEDoff();
 
             // Clear interrupt flags
             button.clearEventBits();
@@ -722,9 +769,11 @@ void setup() {
     // Print hardware information
     printHardwareInfo();
 
-    // NOTE: Status LED removed - using Qwiic Button LED for all status indication
-    Serial.println("✓ Status LED: Using Qwiic Button LED");
-    Serial.println();
+    // Initialize RGB LED (M3L-80)
+    if (!initializeRGBLED()) {
+        Serial.println("⚠ WARNING: RGB LED initialization failed");
+        Serial.println("   Visual status indication disabled");
+    }
 
     // CRITICAL: Initialize SD card with level shifter activation (GPIO32)
     if (!initializeSDCard()) {
@@ -762,6 +811,17 @@ void setup() {
         Serial.println("   Data logging disabled");
     }
 
+    // Initialize GPS module (M3L-79)
+    if (!initializeGPS()) {
+        Serial.println("⚠ WARNING: GPS initialization failed");
+        Serial.println("   GPS time sync disabled, using millis() fallback");
+    }
+
+    // Initialize time manager (M3L-78)
+    initTimeManager();
+    Serial.println("✓ Time manager initialized");
+    Serial.println();
+
     Serial.println("╔════════════════════════════════════════╗");
     Serial.println("║   Initialization Complete - Ready      ║");
     Serial.println("╚════════════════════════════════════════╝");
@@ -770,17 +830,23 @@ void setup() {
     Serial.println("Waiting for button press to start QR scan...");
     Serial.println();
 
-    // Blink button LED to indicate successful initialization
+    // Show startup pattern on RGB LED (3 quick flashes)
     for (int i = 0; i < 3; i++) {
-        button.LEDon(255);  // Full brightness
+        rgbLED.setPixelColor(0, COLOR_GPS_MILLIS);  // Blue startup indicator
+        rgbLED.setBrightness(LED_BRIGHTNESS_INDOOR);
+        rgbLED.show();
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
-        button.LEDoff();
+        rgbLED.setPixelColor(0, 0);  // OFF
+        rgbLED.show();
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
     }
 }
 
 void loop() {
-    // Update LED pattern (non-blocking)
+    // Update time manager (GPS polling for M3L-79)
+    updateTime();
+
+    // Update LED pattern (non-blocking, dual-channel GPS + state)
     updateLEDPattern();
 
     // Poll button status if interrupts aren't available (fallback mode)
