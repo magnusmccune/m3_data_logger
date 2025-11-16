@@ -34,7 +34,7 @@
 #include "esp_sleep.h"
 
 // Deep sleep configuration
-constexpr uint32_t IDLE_TIMEOUT_MS = 5000;  // Enter deep sleep after 5 seconds in IDLE
+constexpr uint32_t IDLE_TIMEOUT_MS = 30000;  // Enter deep sleep after 30 seconds in IDLE (prevents boot loop)
 
 // RTC memory structure (survives deep sleep, max 8KB)
 // Keep minimal to reduce power consumption

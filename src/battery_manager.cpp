@@ -27,10 +27,21 @@ bool initBattery() {
 
     Serial.println("[BATTERY] MAX17048 detected");
 
-    // QuickStart: Force fuel gauge to restart calculations
-    // Improves SOC accuracy after power-on
-    fuelGauge.quickStart();
-    delay(200);  // Allow QuickStart to complete
+    // CRITICAL FIX (M3L-83): QuickStart ONLY on first boot (not after deep sleep wake)
+    // QuickStart forces fuel gauge to restart SOC calculations, which can cause
+    // temporary SOC >100% readings until sensor recalibrates.
+    // After deep sleep wake, sensor state is preserved - no QuickStart needed.
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        // First boot or reset - run QuickStart
+        Serial.println("[BATTERY] First boot - running QuickStart calibration");
+        fuelGauge.quickStart();
+        delay(500);  // Increased delay for stabilization
+    } else {
+        // Waking from deep sleep - sensor state preserved
+        Serial.println("[BATTERY] Waking from deep sleep - skipping QuickStart");
+        delay(100);  // Short delay for I2C stability
+    }
 
     // Read initial values
     float voltage = fuelGauge.getVoltage();
@@ -83,10 +94,16 @@ float getBatteryPercentage() {
 
     float soc = fuelGauge.getSOC();
 
-    // Sanity check
-    if (soc < 0 || soc > 100) {
-        Serial.printf("[BATTERY] WARNING: SOC out of range: %.1f%%\n", soc);
-        return -1.0;
+    // CRITICAL FIX (M3L-83): Clamp to valid range instead of returning error
+    // Sensor can temporarily report >100% after QuickStart or full charge
+    // Clamping provides graceful degradation instead of error state
+    if (soc < 0) {
+        Serial.printf("[BATTERY] WARNING: SOC negative: %.1f%%, clamping to 0%%\n", soc);
+        return 0.0;
+    }
+    if (soc > 100) {
+        Serial.printf("[BATTERY] WARNING: SOC >100%%: %.1f%%, clamping to 100%%\n", soc);
+        return 100.0;
     }
 
     return soc;

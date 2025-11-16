@@ -295,8 +295,10 @@ bool initializeQwiicButton() {
     } else {
         Serial.println("✓ Pressed interrupt enabled");
         
-        // Configure GPIO pin for hardware interrupt
-        pinMode(BUTTON_INT_PIN, INPUT);
+        // CRITICAL FIX (M3L-83): Configure GPIO pin with internal pull-up resistor
+        // INPUT_PULLUP ensures stable HIGH state when button not pressed
+        // Prevents floating GPIO causing false wakeups from deep sleep
+        pinMode(BUTTON_INT_PIN, INPUT_PULLUP);
         attachInterrupt(digitalPinToInterrupt(BUTTON_INT_PIN), buttonISR, FALLING);
         Serial.print("✓ Hardware interrupt attached to GPIO");
         Serial.println(BUTTON_INT_PIN);
