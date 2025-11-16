@@ -685,6 +685,9 @@ void handleRecordingState() {
     // Drain circular buffer to SD card
     IMUSample sample;
     while (getBufferedSample(&sample)) {
+        // Populate GPS location for this sample (M3L-82)
+        getGPSLocation(sample.lat, sample.lon);
+        
         if (!writeSample(sample)) {
             Serial.println("[Recording] ERROR: Failed to write sample to SD");
             break;
