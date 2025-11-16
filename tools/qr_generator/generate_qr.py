@@ -31,6 +31,18 @@ except ImportError:
     sys.exit(1)
 
 
+# QR Size Constraints (Tiny Code Reader hardware limit: 256 bytes)
+QR_MAX_PAYLOAD_BYTES = 220  # Safe limit with QR overhead margin
+
+# Field length limits optimized for QR size
+WIFI_SSID_MAX_LEN = 32      # IEEE 802.11 spec maximum
+WIFI_PASSWORD_MAX_LEN = 16  # Reduced from 64 for QR size
+MQTT_HOST_MAX_LEN = 64      # Generous for long hostnames
+MQTT_USERNAME_MAX_LEN = 16  # Optional field
+MQTT_PASSWORD_MAX_LEN = 16  # Optional field
+DEVICE_ID_MAX_LEN = 16      # Reasonable identifier length
+
+
 def generate_short_uuid(length=8):
     """
     Generate a short UUID-style ID using alphanumeric characters.
@@ -54,7 +66,7 @@ def validate_test_id(test_id):
         return False, "test_id must be exactly 8 characters"
     if not test_id.isalnum():
         return False, "test_id must be alphanumeric only"
-    return True, None
+    return True, ""
 
 
 def validate_description(description):
@@ -63,7 +75,7 @@ def validate_description(description):
         return False, "description cannot be empty"
     if len(description) > 64:
         return False, "description must be 64 characters or less"
-    return True, None
+    return True, ""
 
 
 def validate_labels(labels):
@@ -77,25 +89,34 @@ def validate_labels(labels):
             return False, f"label '{label}' cannot be empty"
         if len(label) > 32:
             return False, f"label '{label}' exceeds 32 characters"
-    return True, None
+    return True, ""
 
 
 def validate_wifi_ssid(ssid):
-    """Validate WiFi SSID format (1-32 chars, alphanumeric + underscore/hyphen)."""
+    """Validate WiFi SSID format (1-32 chars, printable ASCII per IEEE 802.11)."""
     if not 1 <= len(ssid) <= 32:
         return False, "SSID must be 1-32 characters"
-    if not re.match(r'^[a-zA-Z0-9_-]+$', ssid):
-        return False, "SSID contains invalid characters (allowed: a-z, A-Z, 0-9, _, -)"
-    return True, None
+
+    # IEEE 802.11 allows printable ASCII (0x20-0x7E)
+    if not all(0x20 <= ord(c) <= 0x7E for c in ssid):
+        return False, "SSID contains non-printable characters (use ASCII 32-126)"
+
+    return True, ""
 
 
 def validate_wifi_password(password):
-    """Validate WiFi password strength (min 8 chars for WPA2)."""
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters (WPA2 requirement)"
-    if len(password) > 64:
-        return False, "Password must be at most 64 characters"
-    return True, None
+    """Validate WiFi password (WPA2 requirements, max 16 chars for QR size)."""
+    pwd_len = len(password)
+
+    # For QR size constraints, limit to 16 chars (still secure)
+    if not 8 <= pwd_len <= 16:
+        return False, "Password must be 8-16 characters (WPA2 requirement + QR size limit)"
+
+    # WPA2 passphrase: printable ASCII only (0x20-0x7E)
+    if not all(0x20 <= ord(c) <= 0x7E for c in password):
+        return False, "Password must contain only printable ASCII characters (ASCII 32-126)"
+
+    return True, ""
 
 
 def validate_mqtt_host(host):
@@ -106,7 +127,7 @@ def validate_mqtt_host(host):
     ipv4_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
     if re.match(dns_pattern, host) or re.match(ipv4_pattern, host):
-        return True, None
+        return True, ""
     return False, "Invalid MQTT host format (must be DNS name or IPv4 address)"
 
 
@@ -114,7 +135,14 @@ def validate_mqtt_port(port):
     """Validate MQTT port range (1-65535)."""
     if not 1 <= port <= 65535:
         return False, f"Port {port} out of valid range (1-65535)"
-    return True, None
+    return True, ""
+
+
+def validate_device_id(device_id):
+    """Validate device ID (1-16 characters for QR size)."""
+    if not 1 <= len(device_id) <= DEVICE_ID_MAX_LEN:
+        return False, f"Device ID must be 1-{DEVICE_ID_MAX_LEN} characters"
+    return True, ""
 
 
 def generate_qr_code(test_id, description, labels, output_path=None, show=True):
@@ -186,13 +214,13 @@ def generate_config_qr(wifi_ssid, wifi_password, mqtt_host, mqtt_port, mqtt_user
     Generate device configuration QR code.
 
     Args:
-        wifi_ssid: WiFi network SSID (1-32 chars, alphanumeric + underscore/hyphen)
-        wifi_password: WiFi password (min 8 chars for WPA2)
-        mqtt_host: MQTT broker host (DNS name or IPv4 address)
+        wifi_ssid: WiFi network SSID (1-32 chars, printable ASCII)
+        wifi_password: WiFi password (8-16 chars for WPA2 + QR size)
+        mqtt_host: MQTT broker host (DNS name or IPv4 address, max 64 chars)
         mqtt_port: MQTT broker port (1-65535)
-        mqtt_username: MQTT username (optional, can be empty string)
-        mqtt_password: MQTT password (optional, can be empty string)
-        device_id: Device identifier string
+        mqtt_username: MQTT username (optional, max 16 chars)
+        mqtt_password: MQTT password (optional, max 16 chars)
+        device_id: Device identifier string (max 16 chars)
         output_path: Optional path to save QR code image
         show: If True, display QR code in terminal
 
@@ -212,9 +240,24 @@ def generate_config_qr(wifi_ssid, wifi_password, mqtt_host, mqtt_port, mqtt_user
     if not valid:
         raise ValueError(f"Invalid MQTT host: {error}")
 
+    # Additional length validation for MQTT host
+    if len(mqtt_host) > MQTT_HOST_MAX_LEN:
+        raise ValueError(f"MQTT host too long ({len(mqtt_host)} chars, max {MQTT_HOST_MAX_LEN})")
+
     valid, error = validate_mqtt_port(mqtt_port)
     if not valid:
         raise ValueError(f"Invalid MQTT port: {error}")
+
+    # Validate optional fields
+    if len(mqtt_username) > MQTT_USERNAME_MAX_LEN:
+        raise ValueError(f"MQTT username too long ({len(mqtt_username)} chars, max {MQTT_USERNAME_MAX_LEN})")
+
+    if len(mqtt_password) > MQTT_PASSWORD_MAX_LEN:
+        raise ValueError(f"MQTT password too long ({len(mqtt_password)} chars, max {MQTT_PASSWORD_MAX_LEN})")
+
+    valid, error = validate_device_id(device_id)
+    if not valid:
+        raise ValueError(f"Invalid device ID: {error}")
 
     # Build JSON configuration
     config_data = {
@@ -234,10 +277,20 @@ def generate_config_qr(wifi_ssid, wifi_password, mqtt_host, mqtt_port, mqtt_user
     }
 
     json_str = json.dumps(config_data, separators=(',', ':'))  # Compact JSON
+    json_size = len(json_str)
 
-    # Check size (Tiny Code Reader limit: 256 bytes, use 220 safe limit)
-    if len(json_str) > 220:
-        raise ValueError(f"Config JSON too large ({len(json_str)} bytes, max 220)")
+    # Check total size (Tiny Code Reader limit)
+    if json_size > QR_MAX_PAYLOAD_BYTES:
+        raise ValueError(
+            f"Config JSON too large ({json_size} bytes, max {QR_MAX_PAYLOAD_BYTES})\n"
+            f"Reduce field lengths:\n"
+            f"  - WiFi SSID: {len(wifi_ssid)}/{WIFI_SSID_MAX_LEN} chars\n"
+            f"  - WiFi Password: {len(wifi_password)}/{WIFI_PASSWORD_MAX_LEN} chars\n"
+            f"  - MQTT Host: {len(mqtt_host)}/{MQTT_HOST_MAX_LEN} chars\n"
+            f"  - MQTT Username: {len(mqtt_username)}/{MQTT_USERNAME_MAX_LEN} chars\n"
+            f"  - MQTT Password: {len(mqtt_password)}/{MQTT_PASSWORD_MAX_LEN} chars\n"
+            f"  - Device ID: {len(device_id)}/{DEVICE_ID_MAX_LEN} chars"
+        )
 
     # Generate QR code
     qr = qrcode.QRCode(

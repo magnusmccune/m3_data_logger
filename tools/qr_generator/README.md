@@ -378,16 +378,38 @@ Device configuration QR codes contain JSON with WiFi and MQTT settings:
 **Field Requirements:**
 - **type**: Always "device_config" (identifies QR as configuration)
 - **version**: Config schema version (currently "1.0")
-- **wifi.ssid**: WiFi SSID (1-32 chars, alphanumeric + underscore/hyphen)
-- **wifi.password**: WiFi password (min 8 chars for WPA2, max 64 chars)
-- **mqtt.host**: MQTT broker host (DNS name or IPv4 address)
+- **wifi.ssid**: WiFi SSID (1-32 chars, printable ASCII including spaces)
+- **wifi.password**: WiFi password (8-16 chars, printable ASCII)
+- **mqtt.host**: MQTT broker host (DNS name or IPv4 address, max 64 chars)
 - **mqtt.port**: MQTT broker port (1-65535, default: 1883)
-- **mqtt.username**: MQTT username (optional, can be empty string)
-- **mqtt.password**: MQTT password (optional, can be empty string)
-- **mqtt.device_id**: Device identifier
+- **mqtt.username**: MQTT username (optional, max 16 chars)
+- **mqtt.password**: MQTT password (optional, max 16 chars)
+- **mqtt.device_id**: Device identifier (1-16 chars)
 
-**Size Constraint:**
-Config QR JSON must be <220 bytes (Tiny Code Reader limit: 256 bytes, 220 is safe limit with overhead). Keep credentials concise.
+### Configuration Field Limits
+
+The Tiny Code Reader has a 256-byte hardware limit. Config QR codes use a 220-byte safe limit to account for QR encoding overhead. Field lengths are optimized to maximize MQTT hostname space:
+
+| Field | Max Length | Notes |
+|-------|------------|-------|
+| WiFi SSID | 32 chars | IEEE 802.11 maximum, printable ASCII (spaces allowed) |
+| WiFi Password | 16 chars | WPA2 compliant, reduced from 64 for QR size |
+| MQTT Host | 64 chars | Generous limit for long hostnames/IPs |
+| MQTT Username | 16 chars | Optional field, can be empty |
+| MQTT Password | 16 chars | Optional field, can be empty |
+| Device ID | 16 chars | Unique device identifier |
+
+**Example realistic config** (217 bytes, fits in 220-byte limit):
+```json
+{
+  "type":"device_config",
+  "version":"1.0",
+  "wifi":{"ssid":"OfficeWiFi","password":"SecPass123"},
+  "mqtt":{"host":"a3k9m2f7-ats.iot.us-west-2.amazonaws.com","port":1883,"username":"","password":"","device_id":"m3logger01"}
+}
+```
+
+Note: While individual fields support the max lengths shown above, not all fields can be at maximum simultaneously due to the 220-byte total limit. The configuration is optimized for typical IoT use cases like AWS IoT endpoints.
 
 ## Example Output
 
