@@ -27,6 +27,12 @@ static uint32_t sessionStartTimestamp = 0;
 static uint32_t lastFsyncTime = 0;
 static uint32_t samplesWritten = 0;
 
+// Battery state (captured at session start and end)
+static float batteryVoltageStart = 0.0f;
+static float batteryPercentageStart = 0.0f;
+static bool batteryLowStart = false;
+static bool batteryCriticalStart = false;
+
 // Write buffer
 static IMUSample writeBuffer[WRITE_BUFFER_SIZE];
 static uint8_t bufferCount = 0;
@@ -109,6 +115,12 @@ bool startSession(const char* testID, const char* description, const char* label
         sessionFile.close();
         return false;
     }
+
+    // Capture battery state at session start
+    batteryVoltageStart = getBatteryVoltage();
+    batteryPercentageStart = getBatteryPercentage();
+    batteryLowStart = isBatteryLow();
+    batteryCriticalStart = isBatteryCritical();
 
     // Initialize session state
     sessionActive = true;
@@ -373,15 +385,25 @@ static bool writeMetadataEntry(uint32_t sessionDuration, float avgRate) {
     session["time_source"] = (timeSource == TIME_SOURCE_GPS) ? "gps" : "millis";
     session["gps_locked"] = gpsLocked;
 
-    // Add battery data (M3L-83)
-    float batteryVoltage = getBatteryVoltage();
-    float batteryPercentage = getBatteryPercentage();
-    if (batteryVoltage > 0 && batteryPercentage >= 0) {
-        JsonObject battery = session.createNestedObject("battery");
-        battery["voltage"] = serialized(String(batteryVoltage, 2));  // 2 decimal places
-        battery["percentage"] = serialized(String(batteryPercentage, 1));  // 1 decimal place
-        battery["low"] = isBatteryLow();
-        battery["critical"] = isBatteryCritical();
+    // Add battery data - both start and end (M3L-83)
+    // Battery start: captured when session begins
+    if (batteryVoltageStart > 0 && batteryPercentageStart >= 0) {
+        JsonObject batteryStart = session.createNestedObject("battery_start");
+        batteryStart["voltage"] = serialized(String(batteryVoltageStart, 2));  // 2 decimal places
+        batteryStart["percentage"] = serialized(String(batteryPercentageStart, 1));  // 1 decimal place
+        batteryStart["low"] = batteryLowStart;
+        batteryStart["critical"] = batteryCriticalStart;
+    }
+
+    // Battery end: captured when session ends
+    float batteryVoltageEnd = getBatteryVoltage();
+    float batteryPercentageEnd = getBatteryPercentage();
+    if (batteryVoltageEnd > 0 && batteryPercentageEnd >= 0) {
+        JsonObject batteryEnd = session.createNestedObject("battery_end");
+        batteryEnd["voltage"] = serialized(String(batteryVoltageEnd, 2));  // 2 decimal places
+        batteryEnd["percentage"] = serialized(String(batteryPercentageEnd, 1));  // 1 decimal place
+        batteryEnd["low"] = isBatteryLow();
+        batteryEnd["critical"] = isBatteryCritical();
     }
 
     // Write updated metadata back to file
