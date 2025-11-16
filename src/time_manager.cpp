@@ -287,6 +287,12 @@ bool isGPSLocked() {
  * @return true if GPS has valid fix (type 2 or 3), false otherwise
  */
 bool getGPSLocation(float& lat, float& lon) {
+    // Poll GPS for fresh PVT data (non-blocking)
+    // Note: getPVT() is called by updateGPSTime() at 1Hz, so this may return
+    // cached data. This is acceptable since GPS accuracy (2.5m) far exceeds
+    // typical movement in 1 second.
+    gps.getPVT();
+    
     // Check if GPS has valid fix (type 2 = 2D fix, type 3 = 3D fix)
     uint8_t fixType = gps.getFixType();
     
