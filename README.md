@@ -11,6 +11,7 @@ IoT time-series data logger for SparkFun hardware. Records IMU sensor data at 10
 | SAM-M8Q GPS Module | GPS-15210 | 0x42 | Time sync and location |
 | Qwiic Button - Red LED | BOB-15932 | 0x6F | Recording trigger |
 | Tiny Code Reader | SEN-23352 | 0x0C | QR code metadata scanner |
+| MAX17048 Fuel Gauge | (onboard) | 0x36 | LiPo battery monitoring |
 
 **All sensors connect via Qwiic (I2C)** - no soldering required!
 
@@ -77,9 +78,15 @@ m3_data_logger/
 - Color: Green=GPS locked, Yellow=GPS acquiring, Blue=millis fallback, Red=error
 - Pattern: Breathing=IDLE, Blinking=AWAITING_QR, Solid=RECORDING
 
+**Power Management** (M3L-83):
+- IDLE: Device enters deep sleep after 5 seconds to save battery
+- Wake: Press button to wake and start QR scan (instant response)
+- Battery Life: ~21+ days on 2000mAh LiPo (95% idle, 5% recording)
+- Battery Status: Logged every 30 seconds, included in session metadata
+
 **Data Formats**:
 - CSV: `/data/session_YYYYMMDD_HHMMSS.csv` with GPS timestamps (Unix epoch ms), lat/lon, accel_xyz, gyro_xyz
-- Metadata: `/data/metadata.json` with session info, test_id mapping, time source (GPS or millis)
+- Metadata: `/data/metadata.json` with session info, test_id mapping, time source (GPS or millis), battery data
 
 ## QR Code Generation
 
@@ -122,16 +129,17 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
 - [x] Session management with metadata.json (M3L-64)
 - [x] QR Generator CLI + REST API + Docker (M3L-66/67)
 - [x] ESP32 I2C fix for Tiny Code Reader (M3L-66)
-- [x] GPS time synchronization (M3L-77 Epic - 10 commits, +675/-94 lines)
+- [x] GPS time synchronization (M3L-77 Epic)
   - [x] time_manager module with GPS/millis fallback (M3L-78)
   - [x] GPS integration (SAM-M8Q at I2C 0x42) (M3L-79)
   - [x] Dual-channel RGB LED status indication (M3L-80)
   - [x] CSV timestamps with Unix epoch ms (M3L-81)
+- [x] GPS location logging (lat/lon in CSV with 1Hz caching) (M3L-82)
 
 **Next Up**:
-- [ ] GPS location logging (lat/lon in CSV) (M3L-82)
-- [ ] Battery optimization (deep sleep between recordings)
+- [ ] Battery optimization (deep sleep between recordings) (M3L-83)
 - [ ] MQTT transmission (WiFi data upload)
+- [ ] NTP time sync for indoor use
 
 **Build Stats**: 8.0% RAM (26KB), 38.0% Flash (498KB), 302KB free heap
 
