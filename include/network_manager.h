@@ -16,19 +16,23 @@
 
 #include <Arduino.h>
 
-// Configuration constants
-constexpr uint8_t DEVICE_ID_MAX_LEN = 32;
-constexpr uint8_t WIFI_SSID_MAX_LEN = 33;      // WPA2 spec: 0-32 chars + null
-constexpr uint8_t WIFI_PASSWORD_MAX_LEN = 64;  // WPA2 spec: 8-63 chars + null
-constexpr uint8_t MQTT_HOST_MAX_LEN = 64;
-constexpr uint8_t MQTT_USERNAME_MAX_LEN = 32;
-constexpr uint8_t MQTT_PASSWORD_MAX_LEN = 64;
+// Network configuration constants
 constexpr uint16_t MQTT_PORT_MIN = 1;
 constexpr uint16_t MQTT_PORT_MAX = 65535;
+
+// Field length limits (aligned with QR generator for config QR compatibility)
+// Note: Sizes include null terminator
+constexpr uint8_t DEVICE_ID_MAX_LEN = 11;      // 10 chars + \0
+constexpr uint8_t WIFI_SSID_MAX_LEN = 17;      // 16 chars + \0 (IEEE 802.11 allows 32, reduced for 220-byte QR limit)
+constexpr uint8_t WIFI_PASSWORD_MAX_LEN = 17;  // 16 chars + \0 (WPA2 min 8, max 16 for QR size)
+constexpr uint8_t MQTT_HOST_MAX_LEN = 41;      // 40 chars + \0 (fits most hostnames)
+constexpr uint8_t MQTT_USERNAME_MAX_LEN = 11;  // 10 chars + \0 (optional)
+constexpr uint8_t MQTT_PASSWORD_MAX_LEN = 11;  // 10 chars + \0 (optional)
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 5000;  // 5 second WiFi connection timeout
 
 /**
  * @brief Network configuration structure
+ * Field sizes aligned with QR generator to ensure scanned configs validate correctly
  *
  * Contains WiFi credentials and MQTT broker settings. All strings are
  * null-terminated C strings with fixed buffer sizes for stack allocation.
