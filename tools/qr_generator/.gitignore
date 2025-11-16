@@ -4,6 +4,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Generated QR codes
-*.png
-!example_*.png
+# Generated QR codes (except samples)
+qr_codes/*.png
+!qr_codes/samples/**/*.png

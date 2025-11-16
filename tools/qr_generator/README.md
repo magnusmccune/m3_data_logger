@@ -378,16 +378,50 @@ Device configuration QR codes contain JSON with WiFi and MQTT settings:
 **Field Requirements:**
 - **type**: Always "device_config" (identifies QR as configuration)
 - **version**: Config schema version (currently "1.0")
-- **wifi.ssid**: WiFi SSID (1-32 chars, alphanumeric + underscore/hyphen)
-- **wifi.password**: WiFi password (min 8 chars for WPA2, max 64 chars)
-- **mqtt.host**: MQTT broker host (DNS name or IPv4 address)
+- **wifi.ssid**: WiFi SSID (1-32 chars, printable ASCII including spaces)
+- **wifi.password**: WiFi password (8-16 chars, printable ASCII)
+- **mqtt.host**: MQTT broker host (DNS name or IPv4 address, max 64 chars)
 - **mqtt.port**: MQTT broker port (1-65535, default: 1883)
-- **mqtt.username**: MQTT username (optional, can be empty string)
-- **mqtt.password**: MQTT password (optional, can be empty string)
-- **mqtt.device_id**: Device identifier
+- **mqtt.username**: MQTT username (optional, max 16 chars)
+- **mqtt.password**: MQTT password (optional, max 16 chars)
+- **mqtt.device_id**: Device identifier (1-16 chars)
 
-**Size Constraint:**
-Config QR JSON must be <220 bytes (Tiny Code Reader limit: 256 bytes, 220 is safe limit with overhead). Keep credentials concise.
+### Configuration Field Limits
+
+The Tiny Code Reader has a 256-byte hardware limit. Config QR codes use a 220-byte safe limit. JSON structure overhead (~147 bytes) leaves ~73 bytes for field data. Limits are optimized for realistic use cases:
+
+| Field | Max Length | Notes |
+|-------|------------|-------|
+| WiFi SSID | 16 chars | IEEE 802.11 allows 32, reduced for QR size. Printable ASCII, spaces allowed. |
+| WiFi Password | 16 chars | WPA2 minimum 8 chars. Printable ASCII only. |
+| MQTT Host | 40 chars | Fits most hostnames. AWS IoT endpoints (~44 chars) need abbreviation. |
+| MQTT Username | 10 chars | Optional field, can be empty for anonymous MQTT. |
+| MQTT Password | 10 chars | Optional field, can be empty for anonymous MQTT. |
+| Device ID | 10 chars | Unique device identifier. |
+
+**Important**: You cannot max out all fields simultaneously (would be 229 bytes). Realistic configs fit comfortably:
+
+**Example: AWS IoT Endpoint** (~215 bytes, ✓ fits):
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "HomeNet2024" \
+  --wifi-password "MySecPass123" \
+  --mqtt-host "abc123-ats.iot.us-east-1.amazonaws.com" \
+  --mqtt-port 8883 \
+  --device-id "m3log_001"
+```
+
+**Example: Self-Hosted MQTT** (~196 bytes, ✓ fits):
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "Office" \
+  --wifi-password "Pass12345678" \
+  --mqtt-host "mqtt.local" \
+  --mqtt-port 1883 \
+  --mqtt-username "dev01" \
+  --mqtt-password "mqttpass" \
+  --device-id "m3_dev01"
+```
 
 ## Example Output
 

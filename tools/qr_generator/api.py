@@ -80,55 +80,59 @@ class ConfigQRRequest(BaseModel):
     wifi_ssid: str = Field(
         ...,
         min_length=1,
-        max_length=32,
-        description="WiFi network SSID (1-32 characters, alphanumeric + underscore/hyphen)",
-        examples=["MyNetwork"]
+        max_length=16,
+        description="WiFi SSID (1-16 chars for QR size, printable ASCII)",
+        examples=["HomeNetwork"]
     )
 
     wifi_password: str = Field(
         ...,
         min_length=8,
-        max_length=64,
-        description="WiFi password (min 8 characters for WPA2)",
-        examples=["SecurePassword123"]
+        max_length=16,
+        description="WiFi password (8-16 chars, WPA2 compliant)",
+        examples=["SecurePass123"]
     )
 
     mqtt_host: str = Field(
         ...,
-        description="MQTT broker host (DNS name or IPv4 address)",
-        examples=["mqtt.example.com", "192.168.1.100"]
+        min_length=1,
+        max_length=40,
+        description="MQTT broker hostname or IP (max 40 chars)",
+        examples=["mqtt.example.com"]
     )
 
     mqtt_port: int = Field(
         default=1883,
         ge=1,
         le=65535,
-        description="MQTT broker port (1-65535, default 1883)",
-        examples=[1883]
+        description="MQTT broker port"
     )
 
-    mqtt_username: Optional[str] = Field(
+    mqtt_username: str = Field(
         default="",
-        description="MQTT username (optional)",
-        examples=["device123"]
+        max_length=10,
+        description="MQTT username (optional, max 10 chars)"
     )
 
-    mqtt_password: Optional[str] = Field(
+    mqtt_password: str = Field(
         default="",
-        description="MQTT password (optional)",
-        examples=["secret"]
+        max_length=10,
+        description="MQTT password (optional, max 10 chars)"
     )
 
     device_id: str = Field(
         ...,
-        description="Device identifier",
-        examples=["m3logger_001"]
+        min_length=1,
+        max_length=10,
+        description="Device identifier (max 10 chars)",
+        examples=["m3log_001"]
     )
 
     @field_validator('wifi_ssid')
     @classmethod
-    def validate_ssid(cls, v):
+    def validate_ssid(cls, v: str) -> str:
         """Validate WiFi SSID format."""
+        from generate_qr import validate_wifi_ssid
         valid, error = validate_wifi_ssid(v)
         if not valid:
             raise ValueError(error)
@@ -136,8 +140,9 @@ class ConfigQRRequest(BaseModel):
 
     @field_validator('wifi_password')
     @classmethod
-    def validate_password(cls, v):
+    def validate_password(cls, v: str) -> str:
         """Validate WiFi password strength."""
+        from generate_qr import validate_wifi_password
         valid, error = validate_wifi_password(v)
         if not valid:
             raise ValueError(error)
@@ -145,8 +150,9 @@ class ConfigQRRequest(BaseModel):
 
     @field_validator('mqtt_host')
     @classmethod
-    def validate_host(cls, v):
+    def validate_host(cls, v: str) -> str:
         """Validate MQTT broker host format."""
+        from generate_qr import validate_mqtt_host
         valid, error = validate_mqtt_host(v)
         if not valid:
             raise ValueError(error)
@@ -328,13 +334,32 @@ async def generate_config_qr(request: ConfigQRRequest):
         }
 
         json_str = json.dumps(config_data, separators=(',', ':'))  # Compact JSON
+        json_size = len(json_str)
 
-        # Check size (Tiny Code Reader limit: 256 bytes, use 220 safe limit)
-        if len(json_str) > 220:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Config JSON too large ({len(json_str)} bytes, max 220)"
+        # Import constants from generate_qr
+        from generate_qr import (
+            QR_MAX_PAYLOAD_BYTES,
+            WIFI_SSID_MAX_LEN,
+            WIFI_PASSWORD_MAX_LEN,
+            MQTT_HOST_MAX_LEN,
+            MQTT_USERNAME_MAX_LEN,
+            MQTT_PASSWORD_MAX_LEN,
+            DEVICE_ID_MAX_LEN
+        )
+
+        # Check size (Tiny Code Reader limit)
+        if json_size > QR_MAX_PAYLOAD_BYTES:
+            error_details = (
+                f"Config JSON too large ({json_size} bytes, max {QR_MAX_PAYLOAD_BYTES}). "
+                f"Reduce field lengths: "
+                f"WiFi SSID: {len(request.wifi_ssid)}/{WIFI_SSID_MAX_LEN} chars, "
+                f"WiFi Password: {len(request.wifi_password)}/{WIFI_PASSWORD_MAX_LEN} chars, "
+                f"MQTT Host: {len(request.mqtt_host)}/{MQTT_HOST_MAX_LEN} chars, "
+                f"MQTT Username: {len(request.mqtt_username)}/{MQTT_USERNAME_MAX_LEN} chars, "
+                f"MQTT Password: {len(request.mqtt_password)}/{MQTT_PASSWORD_MAX_LEN} chars, "
+                f"Device ID: {len(request.device_id)}/{DEVICE_ID_MAX_LEN} chars"
             )
+            raise HTTPException(status_code=400, detail=error_details)
 
         # Generate QR code
         qr = qrcode.QRCode(
