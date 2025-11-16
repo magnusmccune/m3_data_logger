@@ -126,7 +126,7 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
 
 ## Development Status
 
-**Current Phase**: NEXT - Enhanced Features
+**Current Phase**: NOW - MQTT Connectivity Implementation
 
 **Completed**:
 - [x] Core data logging: State machine, button handler, QR scanner, IMU (100Hz), SD storage
@@ -144,11 +144,20 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
   - [x] Deep sleep implementation with timer wakeup (hardware RESET wake)
   - [x] Battery start/end tracking in session metadata
   - [x] Power manager with low battery detection
+- [x] Network configuration storage (M3L-71)
+  - [x] Hybrid NVS + SD card storage
+  - [x] Serial command interface for config management
+  - [x] WiFi connection manager
+- [x] Configuration QR code generator (M3L-74)
+  - [x] Config mode in CLI tool and REST API
+  - [x] WiFi credentials + MQTT broker settings
+  - [x] 220-byte size optimization for Tiny Code Reader
 
-**Next Up**:
-- [ ] MQTT transmission (WiFi data upload)
-- [ ] NTP time sync for indoor use
-- [ ] Cloud storage integration
+**Next Up** (NOW Phase - MQTT Connectivity):
+- [ ] M3L-84: WiFi & MQTT Core Connection
+- [ ] M3L-85: High-Frequency Sensor Data Streaming (100Hz batched)
+- [ ] M3L-86: Metrics, Monitoring & Shutdown Handling
+- [ ] M3L-72: QR-Based Device Configuration UX
 
 **Build Stats**: 8.0% RAM (26KB), 38.0% Flash (498KB), 302KB free heap
 
