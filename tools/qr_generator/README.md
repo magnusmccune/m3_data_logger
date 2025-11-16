@@ -1,6 +1,8 @@
 # QR Code Generator for M3 Data Logger
 
-Generates QR codes with test metadata for scanning by the M3 Data Logger.
+Generates QR codes for the M3 Data Logger:
+- **Metadata QR codes**: Test metadata (test ID, description, labels)
+- **Configuration QR codes**: Device configuration (WiFi + MQTT broker settings)
 
 Available as both a **CLI tool** and a **REST API service**.
 
@@ -31,33 +33,71 @@ docker run -p 8000:8000 qr-generator-api
 
 ### CLI Tool
 
-#### Generate QR with Auto-Generated Test ID (Default)
+The CLI tool supports two modes: `metadata` and `config`.
 
+#### Metadata Mode
+
+Generate QR codes with test metadata.
+
+**Auto-generated test ID (default):**
 ```bash
-python generate_qr.py --description "walking_outdoor" --labels walking outdoor
+python generate_qr.py --mode metadata --description "walking_outdoor" --labels walking outdoor
 ```
 
 The test ID is automatically generated using a ShortUUID format (8 alphanumeric characters, excluding ambiguous characters).
 
-#### Generate QR with Specific Test ID (Override)
-
+**Specific test ID:**
 ```bash
-python generate_qr.py --test-id A3F9K2M7 --description "running_indoor" --labels running indoor
+python generate_qr.py --mode metadata --test-id A3F9K2M7 --description "running_indoor" --labels running indoor
 ```
 
-#### Save QR to File
-
+**Save to file:**
 ```bash
-python generate_qr.py --description "test1" --labels demo --output test1_qr.png
+python generate_qr.py --mode metadata --description "test1" --labels demo --output test1_qr.png
 ```
 
-#### Batch Generate QR Codes
-
+**Batch generate:**
 ```bash
 # Generate 5 test QR codes
 for i in {1..5}; do
-  python generate_qr.py --description "test$i" --labels demo --output "test${i}_qr.png" --no-show
+  python generate_qr.py --mode metadata --description "test$i" --labels demo --output "test${i}_qr.png" --no-show
 done
+```
+
+#### Config Mode
+
+Generate QR codes with device configuration (WiFi credentials + MQTT broker settings).
+
+**Basic config QR:**
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "MyNetwork" \
+  --wifi-password "SecurePassword123" \
+  --mqtt-host "mqtt.example.com" \
+  --device-id "m3logger_001"
+```
+
+**Full config with MQTT credentials:**
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "MyNetwork" \
+  --wifi-password "SecurePassword123" \
+  --mqtt-host "mqtt.example.com" \
+  --mqtt-port 1883 \
+  --mqtt-username "device123" \
+  --mqtt-password "secret" \
+  --device-id "m3logger_001" \
+  --output config_m3logger_001.png
+```
+
+**Using IP address:**
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "TestNet" \
+  --wifi-password "password123" \
+  --mqtt-host "192.168.1.100" \
+  --device-id "m3logger_test" \
+  --output config_qr.png
 ```
 
 ### REST API
@@ -113,7 +153,7 @@ Response:
 
 ##### POST /generate
 
-Generate QR code image from metadata. Returns PNG image directly.
+Generate QR code image from test metadata. Returns PNG image directly.
 
 **Request Body:**
 ```json
@@ -180,15 +220,124 @@ with open(f"qr_{test_id}.png", "wb") as f:
     f.write(response.content)
 ```
 
+##### POST /generate/config
+
+Generate device configuration QR code. Returns PNG image directly.
+
+**Request Body:**
+```json
+{
+  "wifi_ssid": "MyNetwork",
+  "wifi_password": "SecurePassword123",
+  "mqtt_host": "mqtt.example.com",
+  "mqtt_port": 1883,
+  "mqtt_username": "device123",
+  "mqtt_password": "secret",
+  "device_id": "m3logger_001"
+}
+```
+
+**Required Fields:**
+- `wifi_ssid`: WiFi SSID (1-32 chars, alphanumeric + underscore/hyphen)
+- `wifi_password`: WiFi password (min 8 chars for WPA2)
+- `mqtt_host`: MQTT broker host (DNS name or IPv4 address)
+- `device_id`: Device identifier
+
+**Optional Fields:**
+- `mqtt_port`: MQTT port (1-65535, default: 1883)
+- `mqtt_username`: MQTT username (default: "")
+- `mqtt_password`: MQTT password (default: "")
+
+**Response:**
+- Content-Type: `image/png`
+- Header: `X-Device-ID: <device_id>`
+- Body: PNG image bytes
+
+**Examples:**
+
+Basic config QR:
+
+```bash
+curl -X POST http://localhost:8000/generate/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wifi_ssid": "MyNetwork",
+    "wifi_password": "SecurePassword123",
+    "mqtt_host": "mqtt.example.com",
+    "device_id": "m3logger_001"
+  }' \
+  --output config_qr.png
+```
+
+Full config with MQTT credentials:
+
+```bash
+curl -X POST http://localhost:8000/generate/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wifi_ssid": "MyNetwork",
+    "wifi_password": "SecurePassword123",
+    "mqtt_host": "mqtt.example.com",
+    "mqtt_port": 1883,
+    "mqtt_username": "device123",
+    "mqtt_password": "secret",
+    "device_id": "m3logger_001"
+  }' \
+  --output config_qr.png
+```
+
+Using IP address:
+
+```bash
+curl -X POST http://localhost:8000/generate/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wifi_ssid": "TestNet",
+    "wifi_password": "password123",
+    "mqtt_host": "192.168.1.100",
+    "device_id": "m3logger_test"
+  }' \
+  --output config_test.png
+```
+
+Python client example:
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/generate/config",
+    json={
+        "wifi_ssid": "MyNetwork",
+        "wifi_password": "SecurePassword123",
+        "mqtt_host": "mqtt.example.com",
+        "mqtt_port": 1883,
+        "mqtt_username": "device123",
+        "mqtt_password": "secret",
+        "device_id": "m3logger_001"
+    }
+)
+
+# Get device ID from header
+device_id = response.headers.get("X-Device-ID")
+print(f"Config for device: {device_id}")
+
+# Save config QR code
+with open(f"config_{device_id}.png", "wb") as f:
+    f.write(response.content)
+```
+
 #### API Documentation
 
 Interactive API docs available at:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
-## QR Format
+## QR Formats
 
-The generated QR codes contain JSON metadata:
+### Metadata QR Format
+
+Test metadata QR codes contain JSON with test information:
 
 ```json
 {
@@ -198,12 +347,47 @@ The generated QR codes contain JSON metadata:
 }
 ```
 
-### Field Requirements
-
+**Field Requirements:**
 - **test_id**: Exactly 8 alphanumeric characters (e.g., `A3F9K2M7`)
   - Auto-generated using shortUUID style (excludes ambiguous chars: 0, O, 1, I, l)
 - **description**: 1-64 characters, human-readable test description
 - **labels**: 1-10 labels, each 1-32 characters
+
+### Configuration QR Format
+
+Device configuration QR codes contain JSON with WiFi and MQTT settings:
+
+```json
+{
+  "type": "device_config",
+  "version": "1.0",
+  "wifi": {
+    "ssid": "MyNetwork",
+    "password": "SecurePassword123"
+  },
+  "mqtt": {
+    "host": "mqtt.example.com",
+    "port": 1883,
+    "username": "device123",
+    "password": "secret",
+    "device_id": "m3logger_001"
+  }
+}
+```
+
+**Field Requirements:**
+- **type**: Always "device_config" (identifies QR as configuration)
+- **version**: Config schema version (currently "1.0")
+- **wifi.ssid**: WiFi SSID (1-32 chars, alphanumeric + underscore/hyphen)
+- **wifi.password**: WiFi password (min 8 chars for WPA2, max 64 chars)
+- **mqtt.host**: MQTT broker host (DNS name or IPv4 address)
+- **mqtt.port**: MQTT broker port (1-65535, default: 1883)
+- **mqtt.username**: MQTT username (optional, can be empty string)
+- **mqtt.password**: MQTT password (optional, can be empty string)
+- **mqtt.device_id**: Device identifier
+
+**Size Constraint:**
+Config QR JSON must be <220 bytes (Tiny Code Reader limit: 256 bytes, 220 is safe limit with overhead). Keep credentials concise.
 
 ## Example Output
 
