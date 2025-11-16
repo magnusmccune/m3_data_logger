@@ -25,7 +25,7 @@ struct IMUSample {
     float gyro_x;               // Gyroscope X-axis (degrees/sec)
     float gyro_y;               // Gyroscope Y-axis (degrees/sec)
     float gyro_z;               // Gyroscope Z-axis (degrees/sec)
-};;
+};
 
 // Sensor configuration constants
 constexpr uint16_t SAMPLE_RATE_HZ = 100;            // Target sampling rate
