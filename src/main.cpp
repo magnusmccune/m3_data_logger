@@ -22,6 +22,7 @@
 #include <Arduino.h>
 #include "hardware_init.h"
 #include "battery_manager.h"        // For MAX17048 fuel gauge (M3L-83)
+#include "power_manager.h"          // For deep sleep power management (M3L-83)
 #include "sensor_manager.h"         // For IMU data collection (M3L-61)
 #include "storage_manager.h"        // For SD card CSV logging (M3L-63)
 #include "time_manager.h"           // For GPS time sync and status (M3L-79)
@@ -530,10 +531,10 @@ bool scanQRCode() {
  * - No active sensors
  */
 void handleIdleState() {
+    uint32_t currentTime = millis();
+
     // Check for button press (flag set by ISR)
     if (buttonPressed) {
-        uint32_t currentTime = millis();
-        
         // Debounce check FIRST
         if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
             buttonPressed = false;  // Ignore bounced press
@@ -554,6 +555,22 @@ void handleIdleState() {
         } else {
             buttonPressed = false;  // Clear spurious interrupt
         }
+        return;  // Don't check deep sleep timeout if button was pressed
+    }
+
+    // Deep sleep timeout (M3L-83)
+    // Enter deep sleep after IDLE_TIMEOUT_MS (5 seconds) to save battery
+    uint32_t idleTime = currentTime - stateEntryTime;
+    if (idleTime >= IDLE_TIMEOUT_MS) {
+        Serial.println("\n[IDLE] Deep sleep timeout reached");
+        Serial.printf("[IDLE] Idle time: %lu ms\n", idleTime);
+
+        // Save state to RTC memory (optional, currently not used on wake)
+        saveStateToRTC((uint8_t)currentState);
+
+        // Enter deep sleep (will wake on button press via ext0)
+        // Note: This function does not return - device will reset on wake
+        enterDeepSleep(BUTTON_INT_PIN);
     }
 }
 
@@ -780,6 +797,13 @@ void setup() {
     // Print hardware information
     printHardwareInfo();
 
+    // Initialize power manager and check wakeup reason (M3L-83)
+    initPowerManager();
+
+    // Check if woken by button press - if so, transition directly to AWAITING_QR
+    // This skips the normal IDLE state and acts as if button was just pressed
+    bool wokenByButton = wasWokenByButton();
+
     // Initialize RGB LED (M3L-80)
     if (!initializeRGBLED()) {
         Serial.println("⚠ WARNING: RGB LED initialization failed");
@@ -858,6 +882,12 @@ void setup() {
         rgbLED.setPixelColor(0, 0);  // OFF
         rgbLED.show();
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
+    }
+
+    // If woken by button press, transition to AWAITING_QR (M3L-83)
+    if (wokenByButton) {
+        Serial.println("\n[WAKEUP] Transitioning to AWAITING_QR state");
+        transitionState(SystemState::AWAITING_QR, "woken by button press");
     }
 }
 
