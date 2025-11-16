@@ -30,7 +30,11 @@ from generate_qr import (
     generate_short_uuid,
     validate_test_id,
     validate_description,
-    validate_labels
+    validate_labels,
+    validate_wifi_ssid,
+    validate_wifi_password,
+    validate_mqtt_host,
+    validate_mqtt_port
 )
 
 
@@ -70,6 +74,85 @@ class QRGenerateRequest(BaseModel):
         return v
 
 
+class ConfigQRRequest(BaseModel):
+    """Request model for device configuration QR code generation."""
+
+    wifi_ssid: str = Field(
+        ...,
+        min_length=1,
+        max_length=32,
+        description="WiFi network SSID (1-32 characters, alphanumeric + underscore/hyphen)",
+        examples=["MyNetwork"]
+    )
+
+    wifi_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=64,
+        description="WiFi password (min 8 characters for WPA2)",
+        examples=["SecurePassword123"]
+    )
+
+    mqtt_host: str = Field(
+        ...,
+        description="MQTT broker host (DNS name or IPv4 address)",
+        examples=["mqtt.example.com", "192.168.1.100"]
+    )
+
+    mqtt_port: int = Field(
+        default=1883,
+        ge=1,
+        le=65535,
+        description="MQTT broker port (1-65535, default 1883)",
+        examples=[1883]
+    )
+
+    mqtt_username: Optional[str] = Field(
+        default="",
+        description="MQTT username (optional)",
+        examples=["device123"]
+    )
+
+    mqtt_password: Optional[str] = Field(
+        default="",
+        description="MQTT password (optional)",
+        examples=["secret"]
+    )
+
+    device_id: str = Field(
+        ...,
+        description="Device identifier",
+        examples=["m3logger_001"]
+    )
+
+    @field_validator('wifi_ssid')
+    @classmethod
+    def validate_ssid(cls, v):
+        """Validate WiFi SSID format."""
+        valid, error = validate_wifi_ssid(v)
+        if not valid:
+            raise ValueError(error)
+        return v
+
+    @field_validator('wifi_password')
+    @classmethod
+    def validate_password(cls, v):
+        """Validate WiFi password strength."""
+        valid, error = validate_wifi_password(v)
+        if not valid:
+            raise ValueError(error)
+        return v
+
+    @field_validator('mqtt_host')
+    @classmethod
+    def validate_host(cls, v):
+        """Validate MQTT broker host format."""
+        valid, error = validate_mqtt_host(v)
+        if not valid:
+            raise ValueError(error)
+        return v
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="M3 Data Logger QR Code Generator API",
@@ -90,7 +173,8 @@ async def root():
         "service": "M3 Data Logger QR Code Generator API",
         "version": "1.0.0",
         "endpoints": {
-            "POST /generate": "Generate QR code from metadata",
+            "POST /generate": "Generate QR code from test metadata",
+            "POST /generate/config": "Generate QR code from device configuration",
             "GET /health": "Health check endpoint"
         }
     }
@@ -190,6 +274,102 @@ async def generate_qr(request: QRGenerateRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"QR generation failed: {str(e)}")
+
+
+@app.post("/generate/config", response_class=StreamingResponse)
+async def generate_config_qr(request: ConfigQRRequest):
+    """
+    Generate device configuration QR code.
+
+    Accepts JSON payload with WiFi credentials and MQTT broker settings.
+    Returns PNG image of the generated QR code.
+
+    Args:
+        request: ConfigQRRequest object with device configuration
+
+    Returns:
+        StreamingResponse containing PNG image bytes
+
+    Raises:
+        HTTPException: If validation fails or QR generation errors occur
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/generate/config \\
+          -H "Content-Type: application/json" \\
+          -d '{
+            "wifi_ssid": "MyNetwork",
+            "wifi_password": "SecurePassword123",
+            "mqtt_host": "mqtt.example.com",
+            "mqtt_port": 1883,
+            "mqtt_username": "device123",
+            "mqtt_password": "secret",
+            "device_id": "m3logger_001"
+          }' \\
+          --output config_qr.png
+        ```
+    """
+    try:
+        # Build configuration JSON
+        config_data = {
+            "type": "device_config",
+            "version": "1.0",
+            "wifi": {
+                "ssid": request.wifi_ssid,
+                "password": request.wifi_password
+            },
+            "mqtt": {
+                "host": request.mqtt_host,
+                "port": request.mqtt_port,
+                "username": request.mqtt_username,
+                "password": request.mqtt_password,
+                "device_id": request.device_id
+            }
+        }
+
+        json_str = json.dumps(config_data, separators=(',', ':'))  # Compact JSON
+
+        # Check size (Tiny Code Reader limit: 256 bytes, use 220 safe limit)
+        if len(json_str) > 220:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Config JSON too large ({len(json_str)} bytes, max 220)"
+            )
+
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,  # Auto-fit
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(json_str)
+        qr.make(fit=True)
+
+        # Create PNG image in memory
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        # Save to BytesIO buffer
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+
+        # Return image as streaming response with custom header
+        headers = {
+            "X-Device-ID": request.device_id,
+            "Content-Disposition": f"inline; filename=config_{request.device_id}.png"
+        }
+
+        return StreamingResponse(
+            img_buffer,
+            media_type="image/png",
+            headers=headers
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Config QR generation failed: {str(e)}")
 
 
 # TODO: Future S3 integration endpoint (M3L-67)
