@@ -275,3 +275,35 @@ TimeSource getCurrentTimeSource() {
 bool isGPSLocked() {
     return gpsLocked;
 }
+
+/**
+ * @brief Get current GPS location (latitude and longitude)
+ * 
+ * Retrieves the current GPS coordinates if a valid fix is available.
+ * If no GPS fix is available, returns false and sets lat/lon to 0.0.
+ * 
+ * @param lat Reference to store latitude in decimal degrees
+ * @param lon Reference to store longitude in decimal degrees
+ * @return true if GPS has valid fix (type 2 or 3), false otherwise
+ */
+bool getGPSLocation(float& lat, float& lon) {
+    // Check if GPS has valid fix (type 2 = 2D fix, type 3 = 3D fix)
+    uint8_t fixType = gps.getFixType();
+    
+    if (fixType >= 2 && fixType <= 3) {
+        // Get lat/lon from GPS (in 1e-7 degrees)
+        int32_t rawLat = gps.getLatitude();
+        int32_t rawLon = gps.getLongitude();
+        
+        // Convert to decimal degrees with 4 decimal places precision
+        lat = rawLat / 10000000.0;
+        lon = rawLon / 10000000.0;
+        
+        return true;
+    }
+    
+    // No valid fix - use placeholder values
+    lat = 0.0;
+    lon = 0.0;
+    return false;
+}

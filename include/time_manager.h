@@ -77,4 +77,16 @@ TimeSource getCurrentTimeSource();
  */
 bool isGPSLocked();
 
+/**
+ * @brief Get current GPS location (latitude and longitude)
+ * 
+ * Retrieves the current GPS coordinates if a valid fix is available.
+ * If no GPS fix is available, returns false and sets lat/lon to 0.0.
+ * 
+ * @param lat Reference to store latitude in decimal degrees
+ * @param lon Reference to store longitude in decimal degrees
+ * @return true if GPS has valid fix (type 2 or 3), false otherwise
+ */
+bool getGPSLocation(float& lat, float& lon);
+
 #endif // TIME_MANAGER_H
