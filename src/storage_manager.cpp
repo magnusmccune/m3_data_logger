@@ -68,6 +68,15 @@ bool initializeStorage() {
         Serial.println("[Storage] Created /data directory");
     }
 
+    // Create /config directory if it doesn't exist (for network configuration)
+    if (!SD_MMC.exists("/config")) {
+        if (!SD_MMC.mkdir("/config")) {
+            Serial.println("[Storage] ERROR: Failed to create /config directory");
+            return false;
+        }
+        Serial.println("[Storage] Created /config directory");
+    }
+
     Serial.println("[Storage] Storage manager initialized");
     return true;
 }
