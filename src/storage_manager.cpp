@@ -258,10 +258,11 @@ static bool flushBuffer() {
         // Get GPS timestamp (Unix epoch ms) or millis() fallback
         uint64_t timestamp = getTimestampMs();
 
-        // Write CSV row: test_id,timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
-        int written = sessionFile.printf("%s,%llu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+        // Write CSV row: test_id,timestamp_ms,lat,lon,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z
+        int written = sessionFile.printf("%s,%llu,%.4f,%.4f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
                                           currentTestID,
                                           timestamp,
+                                          sample.lat, sample.lon,
                                           sample.accel_x, sample.accel_y, sample.accel_z,
                                           sample.gyro_x, sample.gyro_y, sample.gyro_z);
 
@@ -300,7 +301,7 @@ static bool createSessionFile(const char* testID) {
  */
 static bool writeCSVHeader() {
     // Write clean column headers only (no metadata comments)
-    sessionFile.println("test_id,timestamp_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z");
+    sessionFile.println("test_id,timestamp_ms,lat,lon,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z");
 
     return true;
 }

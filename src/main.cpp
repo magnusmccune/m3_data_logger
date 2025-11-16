@@ -682,9 +682,19 @@ void handleRecordingState() {
         readIMUSample(&sample);  // Adds to circular buffer
     }
 
+    // Get current GPS location ONCE per loop iteration (M3L-82)
+    // This avoids repeated I2C calls (100-500μs each) that could block 100Hz IMU sampling
+    float currentLat = 0.0f;
+    float currentLon = 0.0f;
+    getGPSLocation(currentLat, currentLon);
+
     // Drain circular buffer to SD card
     IMUSample sample;
     while (getBufferedSample(&sample)) {
+        // Populate with cached GPS location
+        sample.lat = currentLat;
+        sample.lon = currentLon;
+        
         if (!writeSample(sample)) {
             Serial.println("[Recording] ERROR: Failed to write sample to SD");
             break;
