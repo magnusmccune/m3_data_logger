@@ -32,15 +32,17 @@ except ImportError:
 
 
 # QR Size Constraints (Tiny Code Reader hardware limit: 256 bytes)
-QR_MAX_PAYLOAD_BYTES = 220  # Safe limit with QR overhead margin
+# JSON structure overhead ~147 bytes, leaving ~73 bytes for field data
+QR_MAX_PAYLOAD_BYTES = 220
 
-# Field length limits optimized for QR size
-WIFI_SSID_MAX_LEN = 32      # IEEE 802.11 spec maximum
-WIFI_PASSWORD_MAX_LEN = 16  # Reduced from 64 for QR size
-MQTT_HOST_MAX_LEN = 64      # Generous for long hostnames
-MQTT_USERNAME_MAX_LEN = 16  # Optional field
-MQTT_PASSWORD_MAX_LEN = 16  # Optional field
-DEVICE_ID_MAX_LEN = 16      # Reasonable identifier length
+# Field length limits optimized for QR size (cannot max all fields simultaneously)
+# Realistic configs fit comfortably (see README for examples)
+WIFI_SSID_MAX_LEN = 16      # IEEE 802.11 allows 32, reduced for QR size
+WIFI_PASSWORD_MAX_LEN = 16  # WPA2 minimum 8, maximum 16 for QR size
+MQTT_HOST_MAX_LEN = 40      # Fits most hostnames (AWS IoT needs abbreviation)
+MQTT_USERNAME_MAX_LEN = 10  # Optional field
+MQTT_PASSWORD_MAX_LEN = 10  # Optional field
+DEVICE_ID_MAX_LEN = 10      # Reasonable identifier length
 
 
 def generate_short_uuid(length=8):
@@ -93,13 +95,13 @@ def validate_labels(labels):
 
 
 def validate_wifi_ssid(ssid):
-    """Validate WiFi SSID format (1-32 chars, printable ASCII per IEEE 802.11)."""
-    if not 1 <= len(ssid) <= 32:
-        return False, "SSID must be 1-32 characters"
+    """Validate WiFi SSID (1-16 chars, printable ASCII per IEEE 802.11)."""
+    if not 1 <= len(ssid) <= WIFI_SSID_MAX_LEN:
+        return False, f"SSID must be 1-{WIFI_SSID_MAX_LEN} characters (IEEE 802.11 allows 32, reduced for QR size)"
 
     # IEEE 802.11 allows printable ASCII (0x20-0x7E)
     if not all(0x20 <= ord(c) <= 0x7E for c in ssid):
-        return False, "SSID contains non-printable characters (use ASCII 32-126)"
+        return False, "SSID contains non-printable characters (use printable ASCII)"
 
     return True, ""
 
@@ -279,17 +281,21 @@ def generate_config_qr(wifi_ssid, wifi_password, mqtt_host, mqtt_port, mqtt_user
     json_str = json.dumps(config_data, separators=(',', ':'))  # Compact JSON
     json_size = len(json_str)
 
-    # Check total size (Tiny Code Reader limit)
+    # Check total size against Tiny Code Reader limit
     if json_size > QR_MAX_PAYLOAD_BYTES:
+        field_usage = (
+            f"  WiFi SSID: {len(wifi_ssid)}/{WIFI_SSID_MAX_LEN} chars\n"
+            f"  WiFi Password: {len(wifi_password)}/{WIFI_PASSWORD_MAX_LEN} chars\n"
+            f"  MQTT Host: {len(mqtt_host)}/{MQTT_HOST_MAX_LEN} chars\n"
+            f"  MQTT Username: {len(mqtt_username)}/{MQTT_USERNAME_MAX_LEN} chars\n"
+            f"  MQTT Password: {len(mqtt_password)}/{MQTT_PASSWORD_MAX_LEN} chars\n"
+            f"  Device ID: {len(device_id)}/{DEVICE_ID_MAX_LEN} chars\n"
+            f"\nNote: You cannot max out all fields simultaneously.\n"
+            f"Reduce longest fields (MQTT host, SSID, or passwords) to fit."
+        )
         raise ValueError(
             f"Config JSON too large ({json_size} bytes, max {QR_MAX_PAYLOAD_BYTES})\n"
-            f"Reduce field lengths:\n"
-            f"  - WiFi SSID: {len(wifi_ssid)}/{WIFI_SSID_MAX_LEN} chars\n"
-            f"  - WiFi Password: {len(wifi_password)}/{WIFI_PASSWORD_MAX_LEN} chars\n"
-            f"  - MQTT Host: {len(mqtt_host)}/{MQTT_HOST_MAX_LEN} chars\n"
-            f"  - MQTT Username: {len(mqtt_username)}/{MQTT_USERNAME_MAX_LEN} chars\n"
-            f"  - MQTT Password: {len(mqtt_password)}/{MQTT_PASSWORD_MAX_LEN} chars\n"
-            f"  - Device ID: {len(device_id)}/{DEVICE_ID_MAX_LEN} chars"
+            f"Current field usage:\n{field_usage}"
         )
 
     # Generate QR code

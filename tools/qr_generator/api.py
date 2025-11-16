@@ -80,24 +80,24 @@ class ConfigQRRequest(BaseModel):
     wifi_ssid: str = Field(
         ...,
         min_length=1,
-        max_length=32,
-        description="WiFi SSID (1-32 chars, printable ASCII)",
-        examples=["My Network"]
+        max_length=16,
+        description="WiFi SSID (1-16 chars for QR size, printable ASCII)",
+        examples=["HomeNetwork"]
     )
 
     wifi_password: str = Field(
         ...,
         min_length=8,
-        max_length=16,  # Updated from 64
-        description="WiFi password (8-16 chars, printable ASCII)",
+        max_length=16,
+        description="WiFi password (8-16 chars, WPA2 compliant)",
         examples=["SecurePass123"]
     )
 
     mqtt_host: str = Field(
         ...,
         min_length=1,
-        max_length=64,  # Updated from default
-        description="MQTT broker hostname or IP",
+        max_length=40,
+        description="MQTT broker hostname or IP (max 40 chars)",
         examples=["mqtt.example.com"]
     )
 
@@ -105,30 +105,27 @@ class ConfigQRRequest(BaseModel):
         default=1883,
         ge=1,
         le=65535,
-        description="MQTT broker port (1-65535, default 1883)",
-        examples=[1883]
+        description="MQTT broker port"
     )
 
-    mqtt_username: Optional[str] = Field(
+    mqtt_username: str = Field(
         default="",
-        max_length=16,  # Add limit
-        description="MQTT username (optional, max 16 chars)",
-        examples=["mqttuser"]
+        max_length=10,
+        description="MQTT username (optional, max 10 chars)"
     )
 
-    mqtt_password: Optional[str] = Field(
+    mqtt_password: str = Field(
         default="",
-        max_length=16,  # Add limit
-        description="MQTT password (optional, max 16 chars)",
-        examples=["mqttpass"]
+        max_length=10,
+        description="MQTT password (optional, max 10 chars)"
     )
 
     device_id: str = Field(
         ...,
         min_length=1,
-        max_length=16,  # Add limit
-        description="Device identifier (max 16 chars)",
-        examples=["m3logger_001"]
+        max_length=10,
+        description="Device identifier (max 10 chars)",
+        examples=["m3log_001"]
     )
 
     @field_validator('wifi_ssid')

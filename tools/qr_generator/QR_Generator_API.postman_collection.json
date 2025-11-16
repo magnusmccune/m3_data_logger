@@ -182,7 +182,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+          "raw": "{\n  \"wifi_ssid\": \"HomeNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_01\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/generate/config",
@@ -205,7 +205,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"wifi_ssid\": \"MyNetwork\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"mqtt_username\": \"device123\",\n  \"mqtt_password\": \"mqttSecret456\",\n  \"device_id\": \"m3logger_001\"\n}"
+          "raw": "{\n  \"wifi_ssid\": \"OfficeWiFi\",\n  \"wifi_password\": \"CompanyPass2024\",\n  \"mqtt_host\": \"mqtt.company.local\",\n  \"mqtt_port\": 1883,\n  \"mqtt_username\": \"device001\",\n  \"mqtt_password\": \"mqttpass\",\n  \"device_id\": \"m3log_dev\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/generate/config",
@@ -228,14 +228,14 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"wifi_ssid\": \"ThisSSIDIsTooLongAndExceeds32Characters\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3logger_001\"\n}"
+          "raw": "{\n  \"wifi_ssid\": \"ThisSSIDIsTooLongAndExceeds16Chars\",\n  \"wifi_password\": \"SecurePass123\",\n  \"mqtt_host\": \"mqtt.example.com\",\n  \"mqtt_port\": 1883,\n  \"device_id\": \"m3log_001\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/generate/config",
           "host": ["{{base_url}}"],
           "path": ["generate", "config"]
         },
-        "description": "Test validation: SSID must be 1-32 characters"
+        "description": "Test validation: SSID must be 1-16 characters"
       },
       "response": []
     },
