@@ -884,22 +884,10 @@ void setup() {
         delay(SETUP_LED_BLINK_MS);  // Blocking OK during setup - no active state machine yet
     }
 
-    // CRITICAL FIX (M3L-83): Handle wakeup from button press correctly
-    // After ext0 wakeup, GPIO33 is STILL LOW (user hasn't released button)
-    // We must clear button state and wait for next press, not auto-transition
-    if (wokenByButton) {
-        Serial.println("\n[WAKEUP] Woken by button press");
-        Serial.println("[WAKEUP] Clearing button state - waiting for button RELEASE then next press");
-        
-        // CRITICAL FIX: Clear any residual button state from wakeup
-        // GPIO33 is still LOW because user hasn't released button yet
-        button.clearEventBits();
-        buttonPressed = false;
-        
-        // DO NOT transition to AWAITING_QR automatically
-        // Stay in IDLE and wait for user to release button and press again
-        // Normal IDLE state handling will detect the next press
-    }
+    // Device always wakes from hardware RESET button (EN pin)
+    // No need to check wakeup source or clear button state
+    // Qwiic button state is fresh after boot
+    Serial.println("[BOOT] Ready for user input");
 }
 
 void loop() {

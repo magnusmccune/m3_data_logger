@@ -24,15 +24,17 @@ void enterDeepSleep(uint8_t wakeupPin) {
     rtcMem.validData = true;
 
     Serial.printf("[POWER] Boot count: %lu\n", rtcMem.bootCount);
-    Serial.printf("[POWER] Configuring wakeup on GPIO%d (falling edge)...\n", wakeupPin);
 
-    // Configure ext0 wakeup (button press, active LOW)
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)wakeupPin, 0);  // 0 = LOW level
-
-    // Optional: Timer wakeup (disabled for now)
-    // esp_sleep_enable_timer_wakeup(10 * 1000000);  // 10 seconds
+    // NOTE: Button INT pin not wired to ESP32
+    // Device wakes ONLY via hardware RESET button (EN pin)
+    // No wakeup source configuration needed - deep sleep exits on hardware reset
+    Serial.println("[POWER] Deep sleep configured (wake via hardware RESET button only)");
 
     Serial.println("[POWER] Entering deep sleep NOW");
+    Serial.println("[POWER] ----------------------------------------");
+    Serial.println("[POWER] TO WAKE: Press hardware RESET button (EN pin)");
+    Serial.println("[POWER] NOTE: Qwiic button will NOT wake from sleep");
+    Serial.println("[POWER] ----------------------------------------");
     Serial.flush();  // Ensure message is printed
     delay(100);
 
