@@ -118,20 +118,6 @@ bool initializeRGBLED();
 void initializeStatusLED();
 
 /**
- * @brief Get current battery voltage from MAX17048 fuel gauge
- *
- * @return Battery voltage in volts, or -1.0 if fuel gauge not accessible
- */
-float getBatteryVoltage();
-
-/**
- * @brief Get battery state of charge percentage
- *
- * @return Battery percentage (0-100), or -1.0 if fuel gauge not accessible
- */
-float getBatteryPercent();
-
-/**
  * @brief Print hardware information to Serial
  *
  * Displays ESP32 info, memory, flash size, etc.

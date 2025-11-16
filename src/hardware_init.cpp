@@ -13,6 +13,7 @@
  */
 
 #include "hardware_init.h"
+#include "battery_manager.h"
 #include <SD_MMC.h>
 #include <Wire.h>
 #include <SparkFun_Qwiic_Button.h>
@@ -196,17 +197,7 @@ void initializeStatusLED() {
 
 // ===== Battery Monitoring (MAX17048 Fuel Gauge) =====
 
-float getBatteryVoltage() {
-    // TODO: Implement MAX17048 reading via I2C
-    // For now, return -1.0 to indicate not implemented
-    return -1.0;
-}
-
-float getBatteryPercent() {
-    // TODO: Implement MAX17048 reading via I2C
-    // For now, return -1.0 to indicate not implemented
-    return -1.0;
-}
+// Battery functions now delegated to battery_manager.cpp (M3L-83)
 
 // ===== Hardware Information =====
 

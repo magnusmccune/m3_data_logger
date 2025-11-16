@@ -21,6 +21,7 @@
 
 #include <Arduino.h>
 #include "hardware_init.h"
+#include "battery_manager.h"        // For MAX17048 fuel gauge (M3L-83)
 #include "sensor_manager.h"         // For IMU data collection (M3L-61)
 #include "storage_manager.h"        // For SD card CSV logging (M3L-63)
 #include "time_manager.h"           // For GPS time sync and status (M3L-79)
@@ -797,6 +798,14 @@ void setup() {
         Serial.println("⚠ WARNING: I2C initialization issues detected");
     }
 
+    // Initialize MAX17048 battery fuel gauge (M3L-83)
+    if (!initBattery()) {
+        Serial.println("⚠ WARNING: Battery fuel gauge initialization failed");
+        Serial.println("   Battery monitoring disabled");
+    } else {
+        logBatteryStatus();  // Display initial battery status
+    }
+
     // Initialize Qwiic Button with interrupt (M3L-58)
     if (!initializeQwiicButton()) {
         Serial.println("⚠ WARNING: Button initialization failed");
@@ -908,6 +917,15 @@ void loop() {
         Serial.print(" | Time in state: ");
         Serial.print((now - stateEntryTime) / 1000);
         Serial.println("s");
+    }
+
+    // Battery status logging (every 30 seconds) - M3L-83
+    static unsigned long lastBatteryLog = 0;
+    constexpr uint32_t BATTERY_LOG_INTERVAL_MS = 30000;  // 30 seconds
+
+    if (now - lastBatteryLog >= BATTERY_LOG_INTERVAL_MS) {
+        lastBatteryLog = now;
+        logBatteryStatus();
     }
 
     // TODO (M3L-60): QR code event handling will be added
