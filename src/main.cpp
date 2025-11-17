@@ -986,6 +986,140 @@ void handleErrorState() {
     }
 }
 
+/**
+ * @brief Handle CONFIG state
+ *
+ * CONFIG state flow:
+ * 1. Scan for configuration QR code (30s timeout)
+ * 2. Parse and validate config JSON
+ * 3. Test WiFi connection with new credentials
+ * 4. If WiFi test succeeds: Save config and return to IDLE
+ * 5. If WiFi test fails: Rollback (keep old config) and return to IDLE
+ *
+ * User can cancel by pressing button again
+ */
+void handleConfigState() {
+    uint32_t currentTime = millis();
+    uint32_t timeInState = currentTime - stateEntryTime;
+
+    // Check for button press to cancel config mode
+    if (buttonPressed) {
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
+
+        // Verify button press via I2C
+        if (button.hasBeenClicked()) {
+            buttonPressed = false;
+            lastButtonPressTime = currentTime;
+
+            // Clear interrupt flags
+            button.clearEventBits();
+
+            Serial.println("[CONFIG] Configuration cancelled by user");
+            transitionState(SystemState::IDLE, "config cancelled via button");
+            return;
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
+        }
+    }
+
+    // Check for 30-second timeout (same as AWAITING_QR)
+    if (timeInState >= QR_SCAN_TIMEOUT_MS) {
+        Serial.println("[CONFIG] Configuration timeout (30s)");
+        transitionState(SystemState::IDLE, "config timeout (30s)");
+        return;
+    }
+
+    // Poll QR reader (non-blocking, check every 100ms to reduce I2C traffic)
+    static uint32_t lastQRPoll = 0;
+    if (currentTime - lastQRPoll >= 100) {
+        lastQRPoll = currentTime;
+
+        // Scan for QR code
+        tiny_code_reader_results_t results;
+        if (tiny_code_reader_read(&results)) {
+            // Convert byte array to null-terminated string
+            char qrData[257];  // Max 256 bytes + null terminator
+            size_t len = results.length < 256 ? results.length : 256;
+            memcpy(qrData, results.data, len);
+            qrData[len] = '\0';
+
+            Serial.println("\n[CONFIG] QR code detected");
+            Serial.printf("[CONFIG] Length: %d bytes\n", len);
+            Serial.println("[CONFIG] Parsing configuration...");
+
+            // Parse configuration QR
+            NetworkConfig newConfig;
+            if (parseConfigQR(qrData, &newConfig)) {
+                // Config parsed successfully - now test WiFi connection
+                Serial.println("[CONFIG] Testing WiFi connection...");
+                
+                // Temporarily disconnect existing WiFi (if connected)
+                WiFi.disconnect(true);
+                delay(100);
+
+                // Try to connect with new credentials
+                WiFi.begin(newConfig.wifi_ssid, newConfig.wifi_password);
+                
+                uint32_t connectStart = millis();
+                const uint32_t WIFI_TEST_TIMEOUT_MS = 5000;  // 5 second timeout
+                bool connected = false;
+
+                while (millis() - connectStart < WIFI_TEST_TIMEOUT_MS) {
+                    if (WiFi.status() == WL_CONNECTED) {
+                        connected = true;
+                        break;
+                    }
+                    delay(100);
+                }
+
+                if (connected) {
+                    // WiFi test SUCCESSFUL - save config
+                    Serial.println("[CONFIG] ✓ WiFi connection successful!");
+                    Serial.printf("[CONFIG] IP Address: %s\n", WiFi.localIP().toString().c_str());
+                    Serial.printf("[CONFIG] Signal: %d dBm\n", WiFi.RSSI());
+
+                    // Save configuration to NVS and SD
+                    if (saveNetworkConfig(&newConfig)) {
+                        Serial.println("[CONFIG] ✓ Configuration saved successfully");
+                        
+                        // Disconnect WiFi (will reconnect on next boot or MQTT init)
+                        WiFi.disconnect(true);
+                        
+                        // Success - return to IDLE
+                        transitionState(SystemState::IDLE, "config saved successfully");
+                    } else {
+                        Serial.println("[CONFIG] ✗ Failed to save configuration");
+                        WiFi.disconnect(true);
+                        transitionState(SystemState::ERROR, "config save failed");
+                    }
+                } else {
+                    // WiFi test FAILED - rollback (keep old config)
+                    Serial.println("[CONFIG] ✗ WiFi connection failed");
+                    Serial.println("[CONFIG] Possible causes:");
+                    Serial.println("  - Incorrect WiFi password");
+                    Serial.println("  - SSID not in range");
+                    Serial.println("  - Router configuration issue");
+                    Serial.println("[CONFIG] Old configuration retained (no changes made)");
+
+                    WiFi.disconnect(true);
+                    
+                    // Return to IDLE without saving
+                    transitionState(SystemState::IDLE, "WiFi test failed - config not saved");
+                }
+            } else {
+                // Config parsing failed - stay in CONFIG for retry
+                Serial.println("[CONFIG] Invalid configuration QR code");
+                Serial.println("[CONFIG] Please scan a valid configuration QR code");
+                // Don't transition - allow user to scan another QR
+            }
+        }
+    }
+}
+
 void setup() {
     // Initialize serial communication for debugging
     Serial.begin(115200);
@@ -1208,6 +1342,10 @@ void loop() {
 
         case SystemState::RECORDING:
             handleRecordingState();
+            break;
+
+        case SystemState::CONFIG:
+            handleConfigState();
             break;
 
         case SystemState::ERROR:
