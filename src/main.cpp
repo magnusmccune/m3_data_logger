@@ -491,6 +491,160 @@ bool parseQRMetadata(const char* json) {
 }
 
 /**
+ * @brief Parse configuration QR code JSON and populate NetworkConfig struct
+ *
+ * Expected format:
+ * {
+ *   "type": "device_config",
+ *   "version": "1.0",
+ *   "wifi": {"ssid": "...", "password": "..."},
+ *   "mqtt": {"host": "...", "port": 1883, "username": "...", "password": "...", "device_id": "..."}
+ * }
+ *
+ * @param json JSON string from QR code
+ * @param config NetworkConfig struct to populate
+ * @return true if valid config QR parsed successfully, false otherwise
+ */
+bool parseConfigQR(const char* json, NetworkConfig* config) {
+    if (!config) {
+        Serial.println("[CONFIG] ERROR: Null config pointer");
+        return false;
+    }
+
+    StaticJsonDocument<512> doc;  // Larger buffer for config QR
+    DeserializationError error = deserializeJson(doc, json);
+
+    if (error) {
+        Serial.println("[CONFIG] ✗ Error: Invalid JSON syntax");
+        Serial.print("  Details: ");
+        Serial.println(error.c_str());
+        return false;
+    }
+
+    // Reject metadata QRs (check for test_id field)
+    if (doc.containsKey("test_id")) {
+        Serial.println("[CONFIG] ✗ Error: This is a metadata QR, not a config QR");
+        Serial.println("  Hint: Metadata QRs are for recording sessions, not device configuration");
+        return false;
+    }
+
+    // Validate schema: type field
+    const char* type = doc["type"];
+    if (!type || strcmp(type, "device_config") != 0) {
+        Serial.println("[CONFIG] ✗ Error: Missing or invalid 'type' field (expected 'device_config')");
+        return false;
+    }
+
+    // Validate schema: version field
+    const char* version = doc["version"];
+    if (!version || strcmp(version, "1.0") != 0) {
+        Serial.println("[CONFIG] ✗ Error: Missing or invalid 'version' field (expected '1.0')");
+        return false;
+    }
+
+    // Extract WiFi settings
+    JsonObject wifi = doc["wifi"];
+    if (!wifi) {
+        Serial.println("[CONFIG] ✗ Error: Missing 'wifi' object");
+        return false;
+    }
+
+    const char* ssid = wifi["ssid"];
+    if (!ssid || strlen(ssid) < 1 || strlen(ssid) >= WIFI_SSID_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid WiFi SSID (must be 1-%d chars)\n", WIFI_SSID_MAX_LEN - 1);
+        return false;
+    }
+
+    const char* password = wifi["password"];
+    if (!password || strlen(password) < 8 || strlen(password) >= WIFI_PASSWORD_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid WiFi password (must be 8-%d chars for WPA2)\n", WIFI_PASSWORD_MAX_LEN - 1);
+        return false;
+    }
+
+    // Extract MQTT settings
+    JsonObject mqtt = doc["mqtt"];
+    if (!mqtt) {
+        Serial.println("[CONFIG] ✗ Error: Missing 'mqtt' object");
+        return false;
+    }
+
+    const char* host = mqtt["host"];
+    if (!host || strlen(host) < 1 || strlen(host) >= MQTT_HOST_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid MQTT host (must be 1-%d chars)\n", MQTT_HOST_MAX_LEN - 1);
+        return false;
+    }
+
+    uint16_t port = mqtt["port"] | 0;
+    if (port < MQTT_PORT_MIN || port > MQTT_PORT_MAX) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid MQTT port %d (must be %d-%d)\n", port, MQTT_PORT_MIN, MQTT_PORT_MAX);
+        return false;
+    }
+
+    const char* device_id = mqtt["device_id"];
+    if (!device_id || strlen(device_id) < 1 || strlen(device_id) >= DEVICE_ID_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid device_id (must be 1-%d chars)\n", DEVICE_ID_MAX_LEN - 1);
+        return false;
+    }
+
+    // Optional MQTT username/password
+    const char* username = mqtt["username"] | "";
+    const char* mqtt_password = mqtt["password"] | "";
+
+    if (strlen(username) >= MQTT_USERNAME_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: MQTT username too long (max %d chars)\n", MQTT_USERNAME_MAX_LEN - 1);
+        return false;
+    }
+
+    if (strlen(mqtt_password) >= MQTT_PASSWORD_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: MQTT password too long (max %d chars)\n", MQTT_PASSWORD_MAX_LEN - 1);
+        return false;
+    }
+
+    // Populate NetworkConfig struct
+    strncpy(config->wifi_ssid, ssid, WIFI_SSID_MAX_LEN - 1);
+    config->wifi_ssid[WIFI_SSID_MAX_LEN - 1] = '\0';
+
+    strncpy(config->wifi_password, password, WIFI_PASSWORD_MAX_LEN - 1);
+    config->wifi_password[WIFI_PASSWORD_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_host, host, MQTT_HOST_MAX_LEN - 1);
+    config->mqtt_host[MQTT_HOST_MAX_LEN - 1] = '\0';
+
+    config->mqtt_port = port;
+
+    strncpy(config->device_id, device_id, DEVICE_ID_MAX_LEN - 1);
+    config->device_id[DEVICE_ID_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_username, username, MQTT_USERNAME_MAX_LEN - 1);
+    config->mqtt_username[MQTT_USERNAME_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_password, mqtt_password, MQTT_PASSWORD_MAX_LEN - 1);
+    config->mqtt_password[MQTT_PASSWORD_MAX_LEN - 1] = '\0';
+
+    config->mqtt_enabled = true;  // MQTT enabled if config QR scanned
+
+    // Final validation using network_manager validation function
+    if (!validateNetworkConfig(config)) {
+        Serial.println("[CONFIG] ✗ Error: Config validation failed");
+        return false;
+    }
+
+    // Log parsed config (mask passwords)
+    Serial.println("[CONFIG] ✓ Configuration QR validated:");
+    Serial.printf("  WiFi SSID: %s\n", config->wifi_ssid);
+    Serial.println("  WiFi Password: ********");
+    Serial.printf("  MQTT Host: %s\n", config->mqtt_host);
+    Serial.printf("  MQTT Port: %d\n", config->mqtt_port);
+    Serial.printf("  Device ID: %s\n", config->device_id);
+    if (strlen(config->mqtt_username) > 0) {
+        Serial.printf("  MQTT Username: %s\n", config->mqtt_username);
+        Serial.println("  MQTT Password: ********");
+    }
+
+    return true;
+}
+
+/**
  * @brief Non-blocking QR code scan
  * @return true if QR code detected and parsed successfully, false otherwise
  */
