@@ -31,6 +31,7 @@
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
 #include <Adafruit_NeoPixel.h>      // For RGB LED control (M3L-80)
+#include <WiFi.h>                   // For WiFi connection testing in CONFIG state (M3L-72)
 
 // Firmware version
 #define FW_VERSION "0.2.0-dev"
@@ -1059,8 +1060,8 @@ void handleConfigState() {
         if (tiny_code_reader_read(&results)) {
             // Convert byte array to null-terminated string
             char qrData[257];  // Max 256 bytes + null terminator
-            size_t len = results.length < 256 ? results.length : 256;
-            memcpy(qrData, results.data, len);
+            size_t len = results.content_length < 256 ? results.content_length : 256;
+            memcpy(qrData, results.content_bytes, len);
             qrData[len] = '\0';
 
             Serial.println("\n[CONFIG] QR code detected");
