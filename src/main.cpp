@@ -41,8 +41,9 @@ enum class SystemState {
     IDLE,           // Waiting for button press
     AWAITING_QR,    // QR scanner active, 30s timeout
     RECORDING,      // IMU data logging to SD card
+    CONFIG,         // Configuration mode (QR-based device setup)
     ERROR           // Recoverable error state
-};
+};;
 
 SystemState currentState = SystemState::IDLE;
 
@@ -75,7 +76,9 @@ uint32_t lastGPSColor = 0;        // Last GPS color for smooth transitions
 // Button interrupt handling
 volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
 uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
+uint32_t buttonPressStartTime = 0;    // Track button hold start time for CONFIG mode
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
+constexpr uint32_t CONFIG_BUTTON_HOLD_MS = 3000;  // 3s button hold to enter CONFIG mode
 
 // QR Code Metadata Storage (M3L-60, M3L-64)
 char currentTestID[9] = "";           // Test ID from QR code (8 chars + null, e.g., "A3F9K2M7")
@@ -115,6 +118,7 @@ const char* stateToString(SystemState state) {
         case SystemState::IDLE:        return "IDLE";
         case SystemState::AWAITING_QR: return "AWAITING_QR";
         case SystemState::RECORDING:   return "RECORDING";
+        case SystemState::CONFIG:      return "CONFIG";
         case SystemState::ERROR:       return "ERROR";
         default:                       return "UNKNOWN";
     }
