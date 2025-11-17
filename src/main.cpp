@@ -546,21 +546,56 @@ void handleIdleState() {
             return;
         }
 
-        // Verify button press via I2C (NOT in ISR - safe here)
-        if (button.hasBeenClicked()) {
-            buttonPressed = false;  // Clear flag AFTER successful I2C verification
-            lastButtonPressTime = currentTime;
-
-            // Clear interrupt flags to prevent repeat triggers
-            button.clearEventBits();
-
-            // Transition to AWAITING_QR state
-            // RGB LED will show new state pattern automatically via updateLEDPattern()
-            transitionState(SystemState::AWAITING_QR, "button pressed");
-        } else {
-            buttonPressed = false;  // Clear spurious interrupt
+        // Start tracking button press for CONFIG mode entry
+        if (buttonPressStartTime == 0) {
+            buttonPressStartTime = currentTime;
+            Serial.println("[IDLE] Button press detected, checking for hold...");
         }
-        return;  // Don't check deep sleep timeout if button was pressed
+
+        // Check if button has been held for CONFIG_BUTTON_HOLD_MS (3 seconds)
+        uint32_t holdDuration = currentTime - buttonPressStartTime;
+        if (holdDuration >= CONFIG_BUTTON_HOLD_MS) {
+            // Verify button is still pressed via I2C
+            if (button.isPressedQueueEmpty() == false) {
+                buttonPressed = false;
+                buttonPressStartTime = 0;
+                lastButtonPressTime = currentTime;
+
+                // Clear interrupt flags
+                button.clearEventBits();
+
+                // Transition to CONFIG state
+                Serial.println("[IDLE] Long button press detected (3s hold)");
+                transitionState(SystemState::CONFIG, "long button press");
+                return;
+            } else {
+                // Button was released before 3s
+                buttonPressStartTime = 0;
+                buttonPressed = false;
+            }
+        }
+        return;  // Keep checking while button is held
+    } else {
+        // Button released before CONFIG timeout
+        if (buttonPressStartTime > 0) {
+            uint32_t pressDuration = currentTime - buttonPressStartTime;
+            
+            // Only transition to AWAITING_QR if button was released before CONFIG threshold
+            if (pressDuration < CONFIG_BUTTON_HOLD_MS && pressDuration >= BUTTON_DEBOUNCE_MS) {
+                // Verify button press via I2C (NOT in ISR - safe here)
+                if (button.hasBeenClicked()) {
+                    lastButtonPressTime = currentTime;
+
+                    // Clear interrupt flags to prevent repeat triggers
+                    button.clearEventBits();
+
+                    // Transition to AWAITING_QR state
+                    Serial.println("[IDLE] Short button press detected");
+                    transitionState(SystemState::AWAITING_QR, "button pressed");
+                }
+            }
+            buttonPressStartTime = 0;
+        }
     }
 
     // Deep sleep timeout (M3L-83)
