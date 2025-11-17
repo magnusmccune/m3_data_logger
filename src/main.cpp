@@ -66,6 +66,7 @@ constexpr uint32_t COLOR_GPS_LOCKED = 0x00FF00;   // Green: GPS locked (accurate
 constexpr uint32_t COLOR_GPS_ACQUIRING = 0xFFAA00; // Yellow: GPS acquiring (searching)
 constexpr uint32_t COLOR_GPS_MILLIS = 0x0080FF;   // Blue: No GPS (millis fallback)
 constexpr uint32_t COLOR_ERROR = 0xFF0000;        // Red: ERROR state (overrides GPS)
+constexpr uint32_t COLOR_CONFIG = 0x8000FF;       // Purple: CONFIG state (device setup)
 
 // State timing tracking
 uint32_t stateEntryTime = 0;      // Timestamp when current state was entered
@@ -220,6 +221,20 @@ void updateLEDPattern() {
             rgbLED.setPixelColor(0, color);
             rgbLED.show();
             ledState = true;
+            break;
+        }
+
+        case SystemState::CONFIG: {
+            // Purple double-blink pattern (250ms ON, 250ms OFF, 250ms ON, 500ms gap = 1250ms cycle)
+            rgbLED.setBrightness(LED_BRIGHTNESS_INDOOR);
+
+            uint32_t cyclePos = now % 1250;
+            if (cyclePos < 250 || (cyclePos >= 500 && cyclePos < 750)) {
+                rgbLED.setPixelColor(0, COLOR_CONFIG);  // Purple ON
+            } else {
+                rgbLED.setPixelColor(0, 0);  // OFF
+            }
+            rgbLED.show();
             break;
         }
 
