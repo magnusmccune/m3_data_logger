@@ -532,9 +532,12 @@ bool parseConfigQR(const char* json, NetworkConfig* config) {
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
-        Serial.println("[CONFIG] ✗ Error: Invalid JSON syntax");
-        Serial.print("  Details: ");
-        Serial.println(error.c_str());
+        // Suppress EmptyInput errors (normal during QR polling with no QR present)
+        if (error != DeserializationError::EmptyInput) {
+            Serial.println("[CONFIG] ✗ Error: Invalid JSON syntax");
+            Serial.print("  Details: ");
+            Serial.println(error.c_str());
+        }
         return false;
     }
 
@@ -734,58 +737,50 @@ void handleIdleState() {
 
         // Start tracking button press for CONFIG mode entry
         if (buttonPressStartTime == 0) {
-            buttonPressStartTime = currentTime;
-            Serial.println("[IDLE] Button press detected, checking for hold...");
+            // Verify button actually pressed via I2C
+            if (button.isPressed()) {
+                buttonPressStartTime = currentTime;
+                Serial.println("[IDLE] Button press detected, monitoring hold duration...");
+            }
         }
+        
+        buttonPressed = false;  // Clear ISR flag immediately after processing
+        return;
+    }
 
-        // Check if button has been held for CONFIG_BUTTON_HOLD_MS (3 seconds)
-        uint32_t holdDuration = currentTime - buttonPressStartTime;
-        if (holdDuration >= CONFIG_BUTTON_HOLD_MS) {
-            // Verify button is still pressed via I2C
-            if (button.isPressedQueueEmpty() == false) {
-                buttonPressed = false;
-                buttonPressStartTime = 0;
-                lastButtonPressTime = currentTime;
-
-                // Clear interrupt flags
+    // Check if we're tracking a button press (polling for hold duration)
+    if (buttonPressStartTime > 0) {
+        // Poll button state via I2C to check if still held
+        if (button.isPressed()) {
+            uint32_t holdDuration = currentTime - buttonPressStartTime;
+            
+            // Check if button held for 3 seconds → CONFIG mode
+            if (holdDuration >= CONFIG_BUTTON_HOLD_MS) {
+                Serial.println("[IDLE] Long press (>=3s) detected");
                 button.clearEventBits();
-
-                // Transition to CONFIG state
-                Serial.println("[IDLE] Long button press detected (3s hold)");
+                lastButtonPressTime = currentTime;
+                buttonPressStartTime = 0;
                 transitionState(SystemState::CONFIG, "long button press");
                 return;
-            } else {
-                // Button was released before 3s
-                buttonPressStartTime = 0;
-                buttonPressed = false;
             }
-        }
-        return;  // Keep checking while button is held
-    } else {
-        // Button released before CONFIG timeout
-        if (buttonPressStartTime > 0) {
+            // Still holding, keep checking
+        } else {
+            // Button released before 3s threshold
             uint32_t pressDuration = currentTime - buttonPressStartTime;
             
-            // Only transition to AWAITING_QR if button was released before CONFIG threshold
+            // Short press → AWAITING_QR
             if (pressDuration < CONFIG_BUTTON_HOLD_MS && pressDuration >= BUTTON_DEBOUNCE_MS) {
-                // Verify button press via I2C (NOT in ISR - safe here)
-                if (button.hasBeenClicked()) {
-                    lastButtonPressTime = currentTime;
-
-                    // Clear interrupt flags to prevent repeat triggers
-                    button.clearEventBits();
-
-                    // Transition to AWAITING_QR state
-                    Serial.println("[IDLE] Short button press detected");
-                    transitionState(SystemState::AWAITING_QR, "button pressed");
-                }
+                Serial.println("[IDLE] Short press (<3s) detected");
+                button.clearEventBits();
+                lastButtonPressTime = currentTime;
+                transitionState(SystemState::AWAITING_QR, "button pressed");
             }
-            buttonPressStartTime = 0;
+            buttonPressStartTime = 0;  // Reset tracking
         }
     }
 
     // Deep sleep timeout (M3L-83)
-    // Enter deep sleep after IDLE_TIMEOUT_MS (5 seconds) to save battery
+    // Enter deep sleep after IDLE_TIMEOUT_MS to save battery
     uint32_t idleTime = currentTime - stateEntryTime;
     if (idleTime >= IDLE_TIMEOUT_MS) {
         Serial.println("\n[IDLE] Deep sleep timeout reached");
@@ -794,7 +789,7 @@ void handleIdleState() {
         // Save state to RTC memory (optional, currently not used on wake)
         saveStateToRTC((uint8_t)currentState);
 
-        // Enter deep sleep (will wake on button press via ext0)
+        // Enter deep sleep (will wake on hardware RESET button only)
         // Note: This function does not return - device will reset on wake
         enterDeepSleep(BUTTON_INT_PIN);
     }
@@ -845,9 +840,9 @@ void handleAwaitingQRState() {
         return;
     }
 
-    // Poll QR reader (non-blocking, check every 100ms to reduce I2C traffic)
+    // Poll QR reader (non-blocking, check every 250ms to reduce console spam)
     static uint32_t lastQRPoll = 0;
-    if (currentTime - lastQRPoll >= 100) {
+    if (currentTime - lastQRPoll >= 250) {
         lastQRPoll = currentTime;
         
         if (scanQRCode()) {
@@ -1050,9 +1045,9 @@ void handleConfigState() {
         return;
     }
 
-    // Poll QR reader (non-blocking, check every 100ms to reduce I2C traffic)
+    // Poll QR reader (non-blocking, check every 250ms to reduce console spam)
     static uint32_t lastQRPoll = 0;
-    if (currentTime - lastQRPoll >= 100) {
+    if (currentTime - lastQRPoll >= 250) {
         lastQRPoll = currentTime;
 
         // Scan for QR code
