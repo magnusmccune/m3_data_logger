@@ -284,16 +284,21 @@ void transitionState(SystemState newState, const char* reason) {
     // Define valid state transitions
     switch (oldState) {
         case SystemState::IDLE:
-            validTransition = (newState == SystemState::AWAITING_QR || 
+            validTransition = (newState == SystemState::AWAITING_QR ||
+                              newState == SystemState::CONFIG ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::AWAITING_QR:
-            validTransition = (newState == SystemState::RECORDING || 
+            validTransition = (newState == SystemState::RECORDING ||
                               newState == SystemState::IDLE ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::RECORDING:
-            validTransition = (newState == SystemState::IDLE || 
+            validTransition = (newState == SystemState::IDLE ||
+                              newState == SystemState::ERROR);
+            break;
+        case SystemState::CONFIG:
+            validTransition = (newState == SystemState::IDLE ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::ERROR:
@@ -339,6 +344,10 @@ void transitionState(SystemState newState, const char* reason) {
             // (stopSampling() and endSession() called there)
             break;
 
+        case SystemState::CONFIG:
+            // No cleanup needed (WiFi disconnect handled in handleConfigState)
+            break;
+
         case SystemState::ERROR:
             // No cleanup needed
             break;
@@ -367,6 +376,13 @@ void transitionState(SystemState newState, const char* reason) {
             // Start IMU sampling at 100Hz (M3L-61)
             startSampling();
             // Note: Session file already created in handleAwaitingQRState() after QR scan
+            break;
+
+        case SystemState::CONFIG:
+            // LED will be set to purple double-blink by updateLEDPattern()
+            Serial.println("→ Entered CONFIG state: Scan configuration QR code (30s timeout)");
+            Serial.println("   Hold button for 3s from IDLE to enter CONFIG mode");
+            Serial.println("   Press button again to cancel");
             break;
 
         case SystemState::ERROR:
