@@ -1013,8 +1013,10 @@ void handleConfigState() {
     uint32_t currentTime = millis();
     uint32_t timeInState = currentTime - stateEntryTime;
 
-    // Print instructions on first iteration only (within 100ms of state entry)
-    if (timeInState < 100) {
+    // Print instructions on first entry to CONFIG state only
+    static uint32_t lastStateEntry = 0;
+    if (stateEntryTime != lastStateEntry) {
+        lastStateEntry = stateEntryTime;
         Serial.println("\n[CONFIG] Waiting for configuration QR code...");
         Serial.println("[CONFIG] Scan a config QR code or press button to cancel");
     }
