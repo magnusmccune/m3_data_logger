@@ -1013,6 +1013,12 @@ void handleConfigState() {
     uint32_t currentTime = millis();
     uint32_t timeInState = currentTime - stateEntryTime;
 
+    // Print instructions on first iteration only (within 100ms of state entry)
+    if (timeInState < 100) {
+        Serial.println("\n[CONFIG] Waiting for configuration QR code...");
+        Serial.println("[CONFIG] Scan a config QR code or press button to cancel");
+    }
+
     // Check for button press to cancel config mode
     if (buttonPressed) {
         // Debounce check FIRST
@@ -1044,9 +1050,17 @@ void handleConfigState() {
         return;
     }
 
-    // Poll QR reader (non-blocking, check every 250ms to reduce console spam)
+    // Periodic reminder (every 5 seconds)
+    static uint32_t lastReminder = 0;
+    if (currentTime - lastReminder >= 5000) {
+        lastReminder = currentTime;
+        uint32_t remaining = (QR_SCAN_TIMEOUT_MS - timeInState) / 1000;
+        Serial.printf("[CONFIG] Still waiting for QR code... (%lus remaining)\n", remaining);
+    }
+
+    // Poll QR reader (non-blocking, check every 100ms for faster QR detection)
     static uint32_t lastQRPoll = 0;
-    if (currentTime - lastQRPoll >= 250) {
+    if (currentTime - lastQRPoll >= 100) {
         lastQRPoll = currentTime;
 
         // Scan for QR code
@@ -1062,11 +1076,10 @@ void handleConfigState() {
 
                 Serial.println("\n[CONFIG] QR code detected");
                 Serial.printf("[CONFIG] Length: %d bytes\n", len);
-                Serial.println("[CONFIG] Parsing configuration...");
 
-            // Parse configuration QR
-            NetworkConfig newConfig;
-            if (parseConfigQR(qrData, &newConfig)) {
+                // Parse configuration QR
+                NetworkConfig newConfig;
+                if (parseConfigQR(qrData, &newConfig)) {
                 // Config parsed successfully - now test WiFi connection
                 Serial.println("[CONFIG] Testing WiFi connection...");
                 
@@ -1129,9 +1142,9 @@ void handleConfigState() {
                 Serial.println("[CONFIG] Please scan a valid configuration QR code");
                 // Don't transition - allow user to scan another QR
             }
-            }  // End of if (results.content_length > 0)
+        }  // End of if (results.content_length > 0)
         }  // End of if (tiny_code_reader_read(&results))
-    }  // End of if (currentTime - lastQRPoll >= 250)
+    }  // End of if (currentTime - lastQRPoll >= 100)
 }
 
 void setup() {
