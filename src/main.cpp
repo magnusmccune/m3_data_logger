@@ -31,6 +31,7 @@
 #include <ArduinoJson.h>            // For QR code JSON parsing (M3L-60)
 #include <tiny_code_reader.h>       // For QR scanner (M3L-60)
 #include <Adafruit_NeoPixel.h>      // For RGB LED control (M3L-80)
+#include <WiFi.h>                   // For WiFi connection testing in CONFIG state (M3L-72)
 
 // Firmware version
 #define FW_VERSION "0.2.0-dev"
@@ -41,8 +42,9 @@ enum class SystemState {
     IDLE,           // Waiting for button press
     AWAITING_QR,    // QR scanner active, 30s timeout
     RECORDING,      // IMU data logging to SD card
+    CONFIG,         // Configuration mode (QR-based device setup)
     ERROR           // Recoverable error state
-};
+};;
 
 SystemState currentState = SystemState::IDLE;
 
@@ -65,6 +67,7 @@ constexpr uint32_t COLOR_GPS_LOCKED = 0x00FF00;   // Green: GPS locked (accurate
 constexpr uint32_t COLOR_GPS_ACQUIRING = 0xFFAA00; // Yellow: GPS acquiring (searching)
 constexpr uint32_t COLOR_GPS_MILLIS = 0x0080FF;   // Blue: No GPS (millis fallback)
 constexpr uint32_t COLOR_ERROR = 0xFF0000;        // Red: ERROR state (overrides GPS)
+constexpr uint32_t COLOR_CONFIG = 0x8000FF;       // Purple: CONFIG state (device setup)
 
 // State timing tracking
 uint32_t stateEntryTime = 0;      // Timestamp when current state was entered
@@ -75,7 +78,9 @@ uint32_t lastGPSColor = 0;        // Last GPS color for smooth transitions
 // Button interrupt handling
 volatile bool buttonPressed = false;  // Flag set by ISR, checked in main loop
 uint32_t lastButtonPressTime = 0;     // Track last button press for debouncing
+uint32_t buttonPressStartTime = 0;    // Track button hold start time for CONFIG mode
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 50;  // 50ms debounce window
+constexpr uint32_t CONFIG_BUTTON_HOLD_MS = 3000;  // 3s button hold to enter CONFIG mode
 
 // QR Code Metadata Storage (M3L-60, M3L-64)
 char currentTestID[9] = "";           // Test ID from QR code (8 chars + null, e.g., "A3F9K2M7")
@@ -115,6 +120,7 @@ const char* stateToString(SystemState state) {
         case SystemState::IDLE:        return "IDLE";
         case SystemState::AWAITING_QR: return "AWAITING_QR";
         case SystemState::RECORDING:   return "RECORDING";
+        case SystemState::CONFIG:      return "CONFIG";
         case SystemState::ERROR:       return "ERROR";
         default:                       return "UNKNOWN";
     }
@@ -219,6 +225,20 @@ void updateLEDPattern() {
             break;
         }
 
+        case SystemState::CONFIG: {
+            // Purple double-blink pattern (250ms ON, 250ms OFF, 250ms ON, 500ms gap = 1250ms cycle)
+            rgbLED.setBrightness(LED_BRIGHTNESS_INDOOR);
+
+            uint32_t cyclePos = now % 1250;
+            if (cyclePos < 250 || (cyclePos >= 500 && cyclePos < 750)) {
+                rgbLED.setPixelColor(0, COLOR_CONFIG);  // Purple ON
+            } else {
+                rgbLED.setPixelColor(0, 0);  // OFF
+            }
+            rgbLED.show();
+            break;
+        }
+
         case SystemState::ERROR: {
             // Fast blink (5Hz) - 100ms on, 100ms off
             rgbLED.setBrightness(LED_BRIGHTNESS_OUTDOOR);  // High visibility
@@ -265,16 +285,21 @@ void transitionState(SystemState newState, const char* reason) {
     // Define valid state transitions
     switch (oldState) {
         case SystemState::IDLE:
-            validTransition = (newState == SystemState::AWAITING_QR || 
+            validTransition = (newState == SystemState::AWAITING_QR ||
+                              newState == SystemState::CONFIG ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::AWAITING_QR:
-            validTransition = (newState == SystemState::RECORDING || 
+            validTransition = (newState == SystemState::RECORDING ||
                               newState == SystemState::IDLE ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::RECORDING:
-            validTransition = (newState == SystemState::IDLE || 
+            validTransition = (newState == SystemState::IDLE ||
+                              newState == SystemState::ERROR);
+            break;
+        case SystemState::CONFIG:
+            validTransition = (newState == SystemState::IDLE ||
                               newState == SystemState::ERROR);
             break;
         case SystemState::ERROR:
@@ -320,6 +345,10 @@ void transitionState(SystemState newState, const char* reason) {
             // (stopSampling() and endSession() called there)
             break;
 
+        case SystemState::CONFIG:
+            // No cleanup needed (WiFi disconnect handled in handleConfigState)
+            break;
+
         case SystemState::ERROR:
             // No cleanup needed
             break;
@@ -348,6 +377,13 @@ void transitionState(SystemState newState, const char* reason) {
             // Start IMU sampling at 100Hz (M3L-61)
             startSampling();
             // Note: Session file already created in handleAwaitingQRState() after QR scan
+            break;
+
+        case SystemState::CONFIG:
+            // LED will be set to purple double-blink by updateLEDPattern()
+            Serial.println("→ Entered CONFIG state: Scan configuration QR code (30s timeout)");
+            Serial.println("   Hold button for 3s from IDLE to enter CONFIG mode");
+            Serial.println("   Press button again to cancel");
             break;
 
         case SystemState::ERROR:
@@ -472,6 +508,163 @@ bool parseQRMetadata(const char* json) {
 }
 
 /**
+ * @brief Parse configuration QR code JSON and populate NetworkConfig struct
+ *
+ * Expected format:
+ * {
+ *   "type": "device_config",
+ *   "version": "1.0",
+ *   "wifi": {"ssid": "...", "password": "..."},
+ *   "mqtt": {"host": "...", "port": 1883, "username": "...", "password": "...", "device_id": "..."}
+ * }
+ *
+ * @param json JSON string from QR code
+ * @param config NetworkConfig struct to populate
+ * @return true if valid config QR parsed successfully, false otherwise
+ */
+bool parseConfigQR(const char* json, NetworkConfig* config) {
+    if (!config) {
+        Serial.println("[CONFIG] ERROR: Null config pointer");
+        return false;
+    }
+
+    StaticJsonDocument<512> doc;  // Larger buffer for config QR
+    DeserializationError error = deserializeJson(doc, json);
+
+    if (error) {
+        // Suppress EmptyInput errors (normal during QR polling with no QR present)
+        if (error != DeserializationError::EmptyInput) {
+            Serial.println("[CONFIG] ✗ Error: Invalid JSON syntax");
+            Serial.print("  Details: ");
+            Serial.println(error.c_str());
+        }
+        return false;
+    }
+
+    // Reject metadata QRs (check for test_id field)
+    if (doc.containsKey("test_id")) {
+        Serial.println("[CONFIG] ✗ Error: This is a metadata QR, not a config QR");
+        Serial.println("  Hint: Metadata QRs are for recording sessions, not device configuration");
+        return false;
+    }
+
+    // Validate schema: type field
+    const char* type = doc["type"];
+    if (!type || strcmp(type, "device_config") != 0) {
+        Serial.println("[CONFIG] ✗ Error: Missing or invalid 'type' field (expected 'device_config')");
+        return false;
+    }
+
+    // Validate schema: version field
+    const char* version = doc["version"];
+    if (!version || strcmp(version, "1.0") != 0) {
+        Serial.println("[CONFIG] ✗ Error: Missing or invalid 'version' field (expected '1.0')");
+        return false;
+    }
+
+    // Extract WiFi settings
+    JsonObject wifi = doc["wifi"];
+    if (!wifi) {
+        Serial.println("[CONFIG] ✗ Error: Missing 'wifi' object");
+        return false;
+    }
+
+    const char* ssid = wifi["ssid"];
+    if (!ssid || strlen(ssid) < 1 || strlen(ssid) >= WIFI_SSID_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid WiFi SSID (must be 1-%d chars)\n", WIFI_SSID_MAX_LEN - 1);
+        return false;
+    }
+
+    const char* password = wifi["password"];
+    if (!password || strlen(password) < 8 || strlen(password) >= WIFI_PASSWORD_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid WiFi password (must be 8-%d chars for WPA2)\n", WIFI_PASSWORD_MAX_LEN - 1);
+        return false;
+    }
+
+    // Extract MQTT settings
+    JsonObject mqtt = doc["mqtt"];
+    if (!mqtt) {
+        Serial.println("[CONFIG] ✗ Error: Missing 'mqtt' object");
+        return false;
+    }
+
+    const char* host = mqtt["host"];
+    if (!host || strlen(host) < 1 || strlen(host) >= MQTT_HOST_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid MQTT host (must be 1-%d chars)\n", MQTT_HOST_MAX_LEN - 1);
+        return false;
+    }
+
+    uint16_t port = mqtt["port"] | 0;
+    if (port < MQTT_PORT_MIN || port > MQTT_PORT_MAX) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid MQTT port %d (must be %d-%d)\n", port, MQTT_PORT_MIN, MQTT_PORT_MAX);
+        return false;
+    }
+
+    const char* device_id = mqtt["device_id"];
+    if (!device_id || strlen(device_id) < 1 || strlen(device_id) >= DEVICE_ID_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: Invalid device_id (must be 1-%d chars)\n", DEVICE_ID_MAX_LEN - 1);
+        return false;
+    }
+
+    // Optional MQTT username/password
+    const char* username = mqtt["username"] | "";
+    const char* mqtt_password = mqtt["password"] | "";
+
+    if (strlen(username) >= MQTT_USERNAME_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: MQTT username too long (max %d chars)\n", MQTT_USERNAME_MAX_LEN - 1);
+        return false;
+    }
+
+    if (strlen(mqtt_password) >= MQTT_PASSWORD_MAX_LEN) {
+        Serial.printf("[CONFIG] ✗ Error: MQTT password too long (max %d chars)\n", MQTT_PASSWORD_MAX_LEN - 1);
+        return false;
+    }
+
+    // Populate NetworkConfig struct
+    strncpy(config->wifi_ssid, ssid, WIFI_SSID_MAX_LEN - 1);
+    config->wifi_ssid[WIFI_SSID_MAX_LEN - 1] = '\0';
+
+    strncpy(config->wifi_password, password, WIFI_PASSWORD_MAX_LEN - 1);
+    config->wifi_password[WIFI_PASSWORD_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_host, host, MQTT_HOST_MAX_LEN - 1);
+    config->mqtt_host[MQTT_HOST_MAX_LEN - 1] = '\0';
+
+    config->mqtt_port = port;
+
+    strncpy(config->device_id, device_id, DEVICE_ID_MAX_LEN - 1);
+    config->device_id[DEVICE_ID_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_username, username, MQTT_USERNAME_MAX_LEN - 1);
+    config->mqtt_username[MQTT_USERNAME_MAX_LEN - 1] = '\0';
+
+    strncpy(config->mqtt_password, mqtt_password, MQTT_PASSWORD_MAX_LEN - 1);
+    config->mqtt_password[MQTT_PASSWORD_MAX_LEN - 1] = '\0';
+
+    config->mqtt_enabled = true;  // MQTT enabled if config QR scanned
+
+    // Final validation using network_manager validation function
+    if (!validateNetworkConfig(config)) {
+        Serial.println("[CONFIG] ✗ Error: Config validation failed");
+        return false;
+    }
+
+    // Log parsed config (mask passwords)
+    Serial.println("[CONFIG] ✓ Configuration QR validated:");
+    Serial.printf("  WiFi SSID: %s\n", config->wifi_ssid);
+    Serial.println("  WiFi Password: ********");
+    Serial.printf("  MQTT Host: %s\n", config->mqtt_host);
+    Serial.printf("  MQTT Port: %d\n", config->mqtt_port);
+    Serial.printf("  Device ID: %s\n", config->device_id);
+    if (strlen(config->mqtt_username) > 0) {
+        Serial.printf("  MQTT Username: %s\n", config->mqtt_username);
+        Serial.println("  MQTT Password: ********");
+    }
+
+    return true;
+}
+
+/**
  * @brief Non-blocking QR code scan
  * @return true if QR code detected and parsed successfully, false otherwise
  */
@@ -536,31 +729,57 @@ void handleIdleState() {
 
     // Check for button press (flag set by ISR)
     if (buttonPressed) {
-        // Debounce check FIRST
+        // Debounce check
         if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
-            buttonPressed = false;  // Ignore bounced press
+            buttonPressed = false;
             return;
         }
 
-        // Verify button press via I2C (NOT in ISR - safe here)
-        if (button.hasBeenClicked()) {
-            buttonPressed = false;  // Clear flag AFTER successful I2C verification
-            lastButtonPressTime = currentTime;
+        // Start tracking button press
+        buttonPressStartTime = currentTime;
+        buttonPressed = false;  // Clear ISR flag immediately
+        Serial.println("[IDLE] Button press started, tracking hold duration...");
+    }
 
-            // Clear interrupt flags to prevent repeat triggers
+    // Check if we're tracking a button press
+    if (buttonPressStartTime > 0) {
+        uint32_t pressDuration = currentTime - buttonPressStartTime;
+
+        // Check if button is still pressed (polling mode compatible)
+        bool stillPressed = button.isPressed();
+
+        if (!stillPressed) {
+            // Button was released
             button.clearEventBits();
+            lastButtonPressTime = currentTime;
+            buttonPressStartTime = 0;
 
-            // Transition to AWAITING_QR state
-            // RGB LED will show new state pattern automatically via updateLEDPattern()
-            transitionState(SystemState::AWAITING_QR, "button pressed");
-        } else {
-            buttonPressed = false;  // Clear spurious interrupt
+            if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
+                // Released after 3s hold → Long press
+                Serial.println("[IDLE] Long press detected (3s hold, then released)");
+                transitionState(SystemState::CONFIG, "long button press");
+                return;  // Don't continue to deep sleep check
+            } else if (pressDuration >= BUTTON_DEBOUNCE_MS) {
+                // Released before 3s → Short press
+                Serial.println("[IDLE] Short press detected");
+                transitionState(SystemState::AWAITING_QR, "button pressed");
+                return;  // Don't continue to deep sleep check
+            }
+            // Else: Released too quickly (< debounce time), ignore
+        } else if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
+            // Button STILL pressed after 3s → Long press (trigger while holding)
+            button.clearEventBits();
+            lastButtonPressTime = currentTime;
+            buttonPressStartTime = 0;
+            Serial.println("[IDLE] Long press detected (3s hold)");
+            transitionState(SystemState::CONFIG, "long button press");
+            return;  // Don't continue to deep sleep check
         }
-        return;  // Don't check deep sleep timeout if button was pressed
+        // Else: Still tracking, button is being held
     }
 
     // Deep sleep timeout (M3L-83)
-    // Enter deep sleep after IDLE_TIMEOUT_MS (5 seconds) to save battery
+    // Enter deep sleep after IDLE_TIMEOUT_MS to save battery
     uint32_t idleTime = currentTime - stateEntryTime;
     if (idleTime >= IDLE_TIMEOUT_MS) {
         Serial.println("\n[IDLE] Deep sleep timeout reached");
@@ -569,7 +788,7 @@ void handleIdleState() {
         // Save state to RTC memory (optional, currently not used on wake)
         saveStateToRTC((uint8_t)currentState);
 
-        // Enter deep sleep (will wake on button press via ext0)
+        // Enter deep sleep (will wake on hardware RESET button only)
         // Note: This function does not return - device will reset on wake
         enterDeepSleep(BUTTON_INT_PIN);
     }
@@ -620,9 +839,9 @@ void handleAwaitingQRState() {
         return;
     }
 
-    // Poll QR reader (non-blocking, check every 100ms to reduce I2C traffic)
+    // Poll QR reader (non-blocking, check every 250ms to reduce console spam)
     static uint32_t lastQRPoll = 0;
-    if (currentTime - lastQRPoll >= 100) {
+    if (currentTime - lastQRPoll >= 250) {
         lastQRPoll = currentTime;
         
         if (scanQRCode()) {
@@ -776,6 +995,158 @@ void handleErrorState() {
         transitionState(SystemState::IDLE, "auto-recovery timeout (60s)");
         return;
     }
+}
+
+/**
+ * @brief Handle CONFIG state
+ *
+ * CONFIG state flow:
+ * 1. Scan for configuration QR code (30s timeout)
+ * 2. Parse and validate config JSON
+ * 3. Test WiFi connection with new credentials
+ * 4. If WiFi test succeeds: Save config and return to IDLE
+ * 5. If WiFi test fails: Rollback (keep old config) and return to IDLE
+ *
+ * User can cancel by pressing button again
+ */
+void handleConfigState() {
+    uint32_t currentTime = millis();
+    uint32_t timeInState = currentTime - stateEntryTime;
+
+    // Print instructions on first entry to CONFIG state only
+    static uint32_t lastStateEntry = 0;
+    if (stateEntryTime != lastStateEntry) {
+        lastStateEntry = stateEntryTime;
+        Serial.println("\n[CONFIG] Waiting for configuration QR code...");
+        Serial.println("[CONFIG] Scan a config QR code or press button to cancel");
+    }
+
+    // Check for button press to cancel config mode
+    if (buttonPressed) {
+        // Debounce check FIRST
+        if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
+            buttonPressed = false;  // Ignore bounced press
+            return;
+        }
+
+        // Verify button press via I2C
+        if (button.hasBeenClicked()) {
+            buttonPressed = false;
+            lastButtonPressTime = currentTime;
+
+            // Clear interrupt flags
+            button.clearEventBits();
+
+            Serial.println("[CONFIG] Configuration cancelled by user");
+            transitionState(SystemState::IDLE, "config cancelled via button");
+            return;
+        } else {
+            buttonPressed = false;  // Clear spurious interrupt
+        }
+    }
+
+    // Check for 30-second timeout (same as AWAITING_QR)
+    if (timeInState >= QR_SCAN_TIMEOUT_MS) {
+        Serial.println("[CONFIG] Configuration timeout (30s)");
+        transitionState(SystemState::IDLE, "config timeout (30s)");
+        return;
+    }
+
+    // Periodic reminder (every 5 seconds)
+    static uint32_t lastReminder = 0;
+    if (currentTime - lastReminder >= 5000) {
+        lastReminder = currentTime;
+        uint32_t remaining = (QR_SCAN_TIMEOUT_MS - timeInState) / 1000;
+        Serial.printf("[CONFIG] Still waiting for QR code... (%lus remaining)\n", remaining);
+    }
+
+    // Poll QR reader (non-blocking, check every 100ms for faster QR detection)
+    static uint32_t lastQRPoll = 0;
+    if (currentTime - lastQRPoll >= 100) {
+        lastQRPoll = currentTime;
+
+        // Scan for QR code
+        tiny_code_reader_results_t results;
+        if (tiny_code_reader_read(&results)) {
+            // Only process if QR code has content (avoid spam from empty reads)
+            if (results.content_length > 0) {
+                // Convert byte array to null-terminated string
+                char qrData[257];  // Max 256 bytes + null terminator
+                size_t len = results.content_length < 256 ? results.content_length : 256;
+                memcpy(qrData, results.content_bytes, len);
+                qrData[len] = '\0';
+
+                Serial.println("\n[CONFIG] QR code detected");
+                Serial.printf("[CONFIG] Length: %d bytes\n", len);
+
+                // Parse configuration QR
+                NetworkConfig newConfig;
+                if (parseConfigQR(qrData, &newConfig)) {
+                // Config parsed successfully - now test WiFi connection
+                Serial.println("[CONFIG] Testing WiFi connection...");
+                
+                // Temporarily disconnect existing WiFi (if connected)
+                WiFi.disconnect(true);
+                delay(100);
+
+                // Try to connect with new credentials
+                WiFi.begin(newConfig.wifi_ssid, newConfig.wifi_password);
+                
+                uint32_t connectStart = millis();
+                const uint32_t WIFI_TEST_TIMEOUT_MS = 5000;  // 5 second timeout
+                bool connected = false;
+
+                while (millis() - connectStart < WIFI_TEST_TIMEOUT_MS) {
+                    if (WiFi.status() == WL_CONNECTED) {
+                        connected = true;
+                        break;
+                    }
+                    delay(100);
+                }
+
+                if (connected) {
+                    // WiFi test SUCCESSFUL - save config
+                    Serial.println("[CONFIG] ✓ WiFi connection successful!");
+                    Serial.printf("[CONFIG] IP Address: %s\n", WiFi.localIP().toString().c_str());
+                    Serial.printf("[CONFIG] Signal: %d dBm\n", WiFi.RSSI());
+
+                    // Save configuration to NVS and SD
+                    if (saveNetworkConfig(&newConfig)) {
+                        Serial.println("[CONFIG] ✓ Configuration saved successfully");
+                        
+                        // Disconnect WiFi (will reconnect on next boot or MQTT init)
+                        WiFi.disconnect(true);
+                        
+                        // Success - return to IDLE
+                        transitionState(SystemState::IDLE, "config saved successfully");
+                    } else {
+                        Serial.println("[CONFIG] ✗ Failed to save configuration");
+                        WiFi.disconnect(true);
+                        transitionState(SystemState::ERROR, "config save failed");
+                    }
+                } else {
+                    // WiFi test FAILED - rollback (keep old config)
+                    Serial.println("[CONFIG] ✗ WiFi connection failed");
+                    Serial.println("[CONFIG] Possible causes:");
+                    Serial.println("  - Incorrect WiFi password");
+                    Serial.println("  - SSID not in range");
+                    Serial.println("  - Router configuration issue");
+                    Serial.println("[CONFIG] Old configuration retained (no changes made)");
+
+                    WiFi.disconnect(true);
+                    
+                    // Return to IDLE without saving
+                    transitionState(SystemState::IDLE, "WiFi test failed - config not saved");
+                }
+            } else {
+                // Config parsing failed - stay in CONFIG for retry
+                Serial.println("[CONFIG] Invalid configuration QR code");
+                Serial.println("[CONFIG] Please scan a valid configuration QR code");
+                // Don't transition - allow user to scan another QR
+            }
+        }  // End of if (results.content_length > 0)
+        }  // End of if (tiny_code_reader_read(&results))
+    }  // End of if (currentTime - lastQRPoll >= 100)
 }
 
 void setup() {
@@ -976,16 +1347,21 @@ void loop() {
     // Poll button status if interrupts aren't available (fallback mode)
     // Check every 50ms to avoid excessive I2C traffic
     static unsigned long lastPoll = 0;
+    static bool lastButtonState = false;  // Track previous button state
     unsigned long now = millis();
-    
-    if (!buttonPressed && (now - lastPoll >= 50)) {  // Poll if no interrupt pending
+
+    if (now - lastPoll >= 50) {
         lastPoll = now;
-        
-        // Check if button has been clicked via I2C polling
-        if (button.hasBeenClicked()) {
-            buttonPressed = true;  // Set flag as if interrupt fired
-            Serial.println("[POLLING] Button press detected via I2C poll");
+
+        // Check if button is CURRENTLY pressed (not clicked/released)
+        bool currentButtonState = button.isPressed();
+
+        // Detect button press (transition from not-pressed to pressed)
+        if (currentButtonState && !lastButtonState) {
+            buttonPressed = true;  // Set flag on press (not on release)
         }
+
+        lastButtonState = currentButtonState;  // Update state for next poll
     }
 
     // Call appropriate state handler
@@ -1000,6 +1376,10 @@ void loop() {
 
         case SystemState::RECORDING:
             handleRecordingState();
+            break;
+
+        case SystemState::CONFIG:
+            handleConfigState();
             break;
 
         case SystemState::ERROR:
