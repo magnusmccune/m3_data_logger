@@ -72,14 +72,20 @@ m3_data_logger/
 
 ## Workflow Overview
 
+**Data Recording**:
 1. **Press Button** → RGB LED blinks (awaiting QR scan, 30s timeout)
 2. **Scan QR Code** → Captures metadata (test_id, description, labels)
 3. **Recording Starts** → LED solid, IMU data logged to microSD at 100Hz with GPS timestamps
 4. **Press Button** → Recording stops, LED returns to breathing pattern
 
+**Device Configuration** (M3L-72):
+1. **Long Press Button (3s)** → Enters CONFIG mode, purple LED double-blink
+2. **Scan Config QR Code** → Device validates WiFi connection
+3. **Config Saved** → Returns to IDLE if validation succeeds, rollback if fails
+
 **RGB LED Status** (dual-channel indication):
-- Color: Green=GPS locked, Yellow=GPS acquiring, Blue=millis fallback, Red=error
-- Pattern: Breathing=IDLE, Blinking=AWAITING_QR, Solid=RECORDING
+- Color: Green=GPS locked, Yellow=GPS acquiring, Blue=millis fallback, Red=error, Purple=CONFIG mode
+- Pattern: Breathing=IDLE, Blinking=AWAITING_QR, Solid=RECORDING, Double-blink=CONFIG
 
 **Power Management** (M3L-83 - Completed):
 - Deep Sleep: Device enters deep sleep when IDLE to save battery (<1mA consumption)
@@ -94,21 +100,31 @@ m3_data_logger/
 
 ## QR Code Generation
 
-Generate test QR codes using the CLI tool or REST API:
-
-**CLI Tool**:
+**Setup** (first time only):
 ```bash
 cd tools/qr_generator
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python generate_qr.py --description "walking_outdoor" --labels "walking,outdoor"
 ```
 
-**REST API** (Docker):
+**Metadata QR** (for data sessions):
+```bash
+python generate_qr.py --mode metadata --description "walking_outdoor" --labels "walking,outdoor"
+```
+
+**Configuration QR** (for device provisioning, M3L-74):
+```bash
+python generate_qr.py --mode config \
+  --wifi-ssid "MyNetwork" \
+  --wifi-password "SecurePassword123" \
+  --mqtt-host "mqtt.example.com" \
+  --device-id "m3logger_001"
+```
+
+**REST API** (Docker, alternative):
 ```bash
 cd tools/qr_generator
 docker-compose up
-# In another terminal:
 curl -X POST http://localhost:8000/generate \
   -H "Content-Type: application/json" \
   -d '{"description": "walking_outdoor", "labels": ["walking", "outdoor"]}' \
@@ -152,12 +168,16 @@ See `tools/qr_generator/README.md` for full API documentation and Postman guide.
   - [x] Config mode in CLI tool and REST API
   - [x] WiFi credentials + MQTT broker settings
   - [x] 220-byte size optimization for Tiny Code Reader
+- [x] QR-based device configuration (M3L-72)
+  - [x] CONFIG state with 3s button hold entry
+  - [x] Purple double-blink LED pattern
+  - [x] WiFi validation before config save
+  - [x] Automatic rollback on validation failure
 
 **Next Up** (NOW Phase - MQTT Connectivity):
-- [ ] M3L-84: WiFi & MQTT Core Connection
+- [ ] M3L-84: WiFi & MQTT Core Connection (HIGH PRIORITY)
 - [ ] M3L-85: High-Frequency Sensor Data Streaming (100Hz batched)
 - [ ] M3L-86: Metrics, Monitoring & Shutdown Handling
-- [ ] M3L-72: QR-Based Device Configuration UX
 
 **Build Stats**: 8.0% RAM (26KB), 38.0% Flash (498KB), 302KB free heap
 
