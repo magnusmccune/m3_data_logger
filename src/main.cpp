@@ -756,10 +756,12 @@ void handleIdleState() {
                 // Released after 3s hold → Long press (though unusual UX)
                 Serial.println("[IDLE] Long press detected (released after 3s hold)");
                 transitionState(SystemState::CONFIG, "long button press");
+                return;  // Don't continue to deep sleep check
             } else {
                 // Released before 3s → Short press
                 Serial.println("[IDLE] Short press detected");
                 transitionState(SystemState::AWAITING_QR, "button pressed");
+                return;  // Don't continue to deep sleep check
             }
         } else if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
             // 3 seconds elapsed and button NOT clicked (still held) → Long press
@@ -768,6 +770,7 @@ void handleIdleState() {
             buttonPressStartTime = 0;
             Serial.println("[IDLE] Long press detected (3s hold)");
             transitionState(SystemState::CONFIG, "long button press");
+            return;  // Don't continue to deep sleep check
         }
         // Else: Still tracking, keep looping
     }
