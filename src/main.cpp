@@ -745,26 +745,29 @@ void handleIdleState() {
     if (buttonPressStartTime > 0) {
         uint32_t pressDuration = currentTime - buttonPressStartTime;
 
-        // Check if button has been clicked (pressed and released)
-        if (button.hasBeenClicked()) {
+        // Check if button is still pressed (polling mode compatible)
+        bool stillPressed = button.isPressed();
+
+        if (!stillPressed) {
             // Button was released
             button.clearEventBits();
             lastButtonPressTime = currentTime;
             buttonPressStartTime = 0;
 
             if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
-                // Released after 3s hold → Long press (though unusual UX)
-                Serial.println("[IDLE] Long press detected (released after 3s hold)");
+                // Released after 3s hold → Long press
+                Serial.println("[IDLE] Long press detected (3s hold, then released)");
                 transitionState(SystemState::CONFIG, "long button press");
                 return;  // Don't continue to deep sleep check
-            } else {
+            } else if (pressDuration >= BUTTON_DEBOUNCE_MS) {
                 // Released before 3s → Short press
                 Serial.println("[IDLE] Short press detected");
                 transitionState(SystemState::AWAITING_QR, "button pressed");
                 return;  // Don't continue to deep sleep check
             }
+            // Else: Released too quickly (< debounce time), ignore
         } else if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
-            // 3 seconds elapsed and button NOT clicked (still held) → Long press
+            // Button STILL pressed after 3s → Long press (trigger while holding)
             button.clearEventBits();
             lastButtonPressTime = currentTime;
             buttonPressStartTime = 0;
@@ -772,7 +775,7 @@ void handleIdleState() {
             transitionState(SystemState::CONFIG, "long button press");
             return;  // Don't continue to deep sleep check
         }
-        // Else: Still tracking, keep looping
+        // Else: Still tracking, button is being held
     }
 
     // Deep sleep timeout (M3L-83)
@@ -1326,15 +1329,21 @@ void loop() {
     // Poll button status if interrupts aren't available (fallback mode)
     // Check every 50ms to avoid excessive I2C traffic
     static unsigned long lastPoll = 0;
+    static bool lastButtonState = false;  // Track previous button state
     unsigned long now = millis();
-    
-    if (!buttonPressed && (now - lastPoll >= 50)) {  // Poll if no interrupt pending
+
+    if (now - lastPoll >= 50) {
         lastPoll = now;
-        
-        // Check if button has been clicked via I2C polling
-        if (button.hasBeenClicked()) {
-            buttonPressed = true;  // Set flag as if interrupt fired
+
+        // Check if button is CURRENTLY pressed (not clicked/released)
+        bool currentButtonState = button.isPressed();
+
+        // Detect button press (transition from not-pressed to pressed)
+        if (currentButtonState && !lastButtonState) {
+            buttonPressed = true;  // Set flag on press (not on release)
         }
+
+        lastButtonState = currentButtonState;  // Update state for next poll
     }
 
     // Call appropriate state handler
