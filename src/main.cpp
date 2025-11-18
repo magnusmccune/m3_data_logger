@@ -1052,15 +1052,17 @@ void handleConfigState() {
         // Scan for QR code
         tiny_code_reader_results_t results;
         if (tiny_code_reader_read(&results)) {
-            // Convert byte array to null-terminated string
-            char qrData[257];  // Max 256 bytes + null terminator
-            size_t len = results.content_length < 256 ? results.content_length : 256;
-            memcpy(qrData, results.content_bytes, len);
-            qrData[len] = '\0';
+            // Only process if QR code has content (avoid spam from empty reads)
+            if (results.content_length > 0) {
+                // Convert byte array to null-terminated string
+                char qrData[257];  // Max 256 bytes + null terminator
+                size_t len = results.content_length < 256 ? results.content_length : 256;
+                memcpy(qrData, results.content_bytes, len);
+                qrData[len] = '\0';
 
-            Serial.println("\n[CONFIG] QR code detected");
-            Serial.printf("[CONFIG] Length: %d bytes\n", len);
-            Serial.println("[CONFIG] Parsing configuration...");
+                Serial.println("\n[CONFIG] QR code detected");
+                Serial.printf("[CONFIG] Length: %d bytes\n", len);
+                Serial.println("[CONFIG] Parsing configuration...");
 
             // Parse configuration QR
             NetworkConfig newConfig;
@@ -1127,8 +1129,9 @@ void handleConfigState() {
                 Serial.println("[CONFIG] Please scan a valid configuration QR code");
                 // Don't transition - allow user to scan another QR
             }
-        }
-    }
+            }  // End of if (results.content_length > 0)
+        }  // End of if (tiny_code_reader_read(&results))
+    }  // End of if (currentTime - lastQRPoll >= 250)
 }
 
 void setup() {
