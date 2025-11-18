@@ -729,54 +729,47 @@ void handleIdleState() {
 
     // Check for button press (flag set by ISR)
     if (buttonPressed) {
-        // Debounce check FIRST
+        // Debounce check
         if (currentTime - lastButtonPressTime < BUTTON_DEBOUNCE_MS) {
-            buttonPressed = false;  // Ignore bounced press
+            buttonPressed = false;
             return;
         }
 
-        // Start tracking button press for CONFIG mode entry
-        if (buttonPressStartTime == 0) {
-            // Verify button actually pressed via I2C
-            if (button.isPressed()) {
-                buttonPressStartTime = currentTime;
-                Serial.println("[IDLE] Button press detected, monitoring hold duration...");
-            }
-        }
-        
-        buttonPressed = false;  // Clear ISR flag immediately after processing
-        return;
+        // Start tracking button press
+        buttonPressStartTime = currentTime;
+        buttonPressed = false;  // Clear ISR flag immediately
+        Serial.println("[IDLE] Button press started, tracking hold duration...");
     }
 
-    // Check if we're tracking a button press (polling for hold duration)
+    // Check if we're tracking a button press
     if (buttonPressStartTime > 0) {
-        // Poll button state via I2C to check if still held
-        if (button.isPressed()) {
-            uint32_t holdDuration = currentTime - buttonPressStartTime;
-            
-            // Check if button held for 3 seconds → CONFIG mode
-            if (holdDuration >= CONFIG_BUTTON_HOLD_MS) {
-                Serial.println("[IDLE] Long press (>=3s) detected");
-                button.clearEventBits();
-                lastButtonPressTime = currentTime;
-                buttonPressStartTime = 0;
+        uint32_t pressDuration = currentTime - buttonPressStartTime;
+
+        // Check if button has been clicked (pressed and released)
+        if (button.hasBeenClicked()) {
+            // Button was released
+            button.clearEventBits();
+            lastButtonPressTime = currentTime;
+            buttonPressStartTime = 0;
+
+            if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
+                // Released after 3s hold → Long press (though unusual UX)
+                Serial.println("[IDLE] Long press detected (released after 3s hold)");
                 transitionState(SystemState::CONFIG, "long button press");
-                return;
-            }
-            // Still holding, keep checking
-        } else {
-            // Button released before 3s threshold
-            uint32_t pressDuration = currentTime - buttonPressStartTime;
-            
-            // Short press → AWAITING_QR
-            if (pressDuration < CONFIG_BUTTON_HOLD_MS && pressDuration >= BUTTON_DEBOUNCE_MS) {
-                Serial.println("[IDLE] Short press (<3s) detected");
-                button.clearEventBits();
-                lastButtonPressTime = currentTime;
+            } else {
+                // Released before 3s → Short press
+                Serial.println("[IDLE] Short press detected");
                 transitionState(SystemState::AWAITING_QR, "button pressed");
             }
-            buttonPressStartTime = 0;  // Reset tracking
+        } else if (pressDuration >= CONFIG_BUTTON_HOLD_MS) {
+            // 3 seconds elapsed and button NOT clicked (still held) → Long press
+            button.clearEventBits();
+            lastButtonPressTime = currentTime;
+            buttonPressStartTime = 0;
+            Serial.println("[IDLE] Long press detected (3s hold)");
+            transitionState(SystemState::CONFIG, "long button press");
         }
+        // Else: Still tracking, keep looping
     }
 
     // Deep sleep timeout (M3L-83)
@@ -1338,7 +1331,6 @@ void loop() {
         // Check if button has been clicked via I2C polling
         if (button.hasBeenClicked()) {
             buttonPressed = true;  // Set flag as if interrupt fired
-            Serial.println("[POLLING] Button press detected via I2C poll");
         }
     }
 
